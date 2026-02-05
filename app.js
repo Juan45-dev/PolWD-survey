@@ -21,17 +21,28 @@ const PURPOSE_OPTIONS = [
   "Reporting an issue",
 ];
 
-const STEP_LABELS = [
-  "Account",
-  "Service",
-  "Ratings",
-  "Comments",
-  "Review",
+const ZONE_OPTIONS = [
+  "North Zone",
+  "East Zone",
+  "South Zone",
+  "West Zone",
+  "Central Zone",
 ];
+
+const STEP_LABELS = ["Account", "Service", "Ratings", "Comments", "Review"];
+
+const SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbxypMqE20DFz0N2GhIbi9jCabNAlu_h18nuUp8HAXcuarAJ63PbQEcmgHYWMz3zM7ls/exec";
+
+const PHONE_PATTERN = /^\+?[0-9\s()-]{7,}$/;
+const ACCOUNT_PATTERN = /^[A-Za-z0-9-]{5,}$/;
 
 const DEFAULT_STATE = {
   name: "",
   email: "",
+  phone: "",
+  accountNumber: "",
+  zone: "Central Zone",
   purpose: "Residential service",
   experience: "good",
   nps: 8,
@@ -49,8 +60,13 @@ function App() {
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [formState, setFormState] = useState(DEFAULT_STATE);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  const progress = useMemo(() => ((step + 1) / STEP_LABELS.length) * 100, [step]);
+  const progress = useMemo(
+    () => ((step + 1) / STEP_LABELS.length) * 100,
+    [step]
+  );
 
   const overallScore = useMemo(() => {
     const values = Object.values(formState.topics);
@@ -58,15 +74,30 @@ function App() {
     return (total / values.length).toFixed(1);
   }, [formState.topics]);
 
+  const isPhoneValid = useMemo(() => {
+    const value = formState.phone.trim();
+    return value.length === 0 || PHONE_PATTERN.test(value);
+  }, [formState.phone]);
+
+  const isAccountValid = useMemo(() => {
+    const value = formState.accountNumber.trim();
+    return value.length === 0 || ACCOUNT_PATTERN.test(value);
+  }, [formState.accountNumber]);
+
   const canMoveNext = useMemo(() => {
     if (step === 0) {
-      return formState.name.trim().length > 0 && formState.email.trim().length > 0;
+      return (
+        formState.name.trim().length > 0 &&
+        formState.email.trim().length > 0 &&
+        isPhoneValid &&
+        isAccountValid
+      );
     }
     if (step === 3) {
       return formState.feedback.trim().length > 4;
     }
     return true;
-  }, [formState, step]);
+  }, [formState, isAccountValid, isPhoneValid, step]);
 
   const updateField = (field, value) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -82,7 +113,52 @@ function App() {
     }));
   };
 
-  const handleSubmit = (event) => {
+  const sendResponse = async () => {
+    if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_SCRIPT_ID")) {
+      setSaveError("Missing Google Sheets script URL.");
+      return false;
+    }
+
+    setIsSaving(true);
+    setSaveError("");
+    const payload = {
+      ...formState,
+      overallScore,
+      submittedAt: new Date().toISOString(),
+    };
+
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Bad response");
+      }
+
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (error) {
+        data = null;
+      }
+
+      if (data && data.status === "error") {
+        throw new Error(data.message || "Save failed");
+      }
+
+      return true;
+    } catch (error) {
+      setSaveError("We couldn't save your response. Please try again.");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canMoveNext) {
       return;
@@ -91,7 +167,10 @@ function App() {
       setStep((prev) => prev + 1);
       return;
     }
-    setSubmitted(true);
+    const saved = await sendResponse();
+    if (saved) {
+      setSubmitted(true);
+    }
   };
 
   const handleBack = () => {
@@ -108,16 +187,22 @@ function App() {
     <main className="survey-shell">
       <header className="survey-header">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true" />
+          <img
+            className="brand-logo"
+            src="./pwd-logo.jpg"
+            alt="Polomolok Water District logo"
+          />
           <div>
-            <p className="brand-name">PolWD Satisfaction Survey</p>
-            <p className="brand-tagline">Adapting with Resiliency Delivering with Efficiency</p>
+            <p className="brand-name">Polomolok Water District</p>
+            <p className="brand-tagline">
+              Adapting with Resiliency Delivering with Efficiency
+            </p>
           </div>
         </div>
         <h1>Service Satisfaction Survey</h1>
         <p>
-          Tell us how your water service has been performing. This quick survey
-          helps us improve service quality and communication.
+          Tell us how your water service has been performing in Polomolok. This
+          quick survey helps us improve service quality and communication.
         </p>
         <div className="progress" aria-hidden="true">
           <span style={{ width: `${progress}%` }} />
@@ -135,9 +220,11 @@ function App() {
             service team. Your overall satisfaction score:{" "}
             <strong>{overallScore} / 5</strong>
           </p>
-          <button className="primary" type="button" onClick={resetSurvey}>
-            Submit another response
-          </button>
+          <div className="actions">
+            <button className="primary" type="button" onClick={resetSurvey}>
+              Submit another response
+            </button>
+          </div>
         </section>
       ) : (
         <form onSubmit={handleSubmit} className="survey-grid">
@@ -149,10 +236,45 @@ function App() {
                   id="name"
                   type="text"
                   placeholder="Avery Johnson"
+                  autoComplete="name"
                   value={formState.name}
                   onChange={(event) => updateField("name", event.target.value)}
                   required
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="phone">Phone number</label>
+                <input
+                  id="phone"
+                  type="tel"
+                  placeholder="+1 555 123 4567"
+                  autoComplete="tel"
+                  inputMode="tel"
+                  pattern="\\+?[0-9\\s()\\-]{7,}"
+                  aria-invalid={!isPhoneValid}
+                  value={formState.phone}
+                  onChange={(event) => updateField("phone", event.target.value)}
+                />
+                {!isPhoneValid && (
+                  <p className="field-hint">Enter at least 7 digits.</p>
+                )}
+              </div>
+              <div className="field">
+                <label htmlFor="accountNumber">Account number</label>
+                <input
+                  id="accountNumber"
+                  type="text"
+                  placeholder="ACC-00012345"
+                  pattern="[A-Za-z0-9-]{5,}"
+                  aria-invalid={!isAccountValid}
+                  value={formState.accountNumber}
+                  onChange={(event) =>
+                    updateField("accountNumber", event.target.value)
+                  }
+                />
+                {!isAccountValid && (
+                  <p className="field-hint">Use at least 5 letters or numbers.</p>
+                )}
               </div>
               <div className="field">
                 <label htmlFor="email">Email address</label>
@@ -160,17 +282,34 @@ function App() {
                   id="email"
                   type="email"
                   placeholder="avery@email.com"
+                  autoComplete="email"
                   value={formState.email}
                   onChange={(event) => updateField("email", event.target.value)}
                   required
                 />
               </div>
               <div className="field">
+                <label htmlFor="zone">Service zone</label>
+                <select
+                  id="zone"
+                  value={formState.zone}
+                  onChange={(event) => updateField("zone", event.target.value)}
+                >
+                  {ZONE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
                 <label htmlFor="purpose">Purpose of contact</label>
                 <select
                   id="purpose"
                   value={formState.purpose}
-                  onChange={(event) => updateField("purpose", event.target.value)}
+                  onChange={(event) =>
+                    updateField("purpose", event.target.value)
+                  }
                 >
                   {PURPOSE_OPTIONS.map((option) => (
                     <option key={option} value={option}>
@@ -184,9 +323,15 @@ function App() {
 
           {step === 1 && (
             <>
-              <div className="field">
-                <label>How would you rate your water service overall?</label>
-                <div className="options" role="radiogroup">
+              <fieldset className="field">
+                <legend id="experience-legend">
+                  How would you rate your water service overall?
+                </legend>
+                <div
+                  className="options"
+                  role="radiogroup"
+                  aria-labelledby="experience-legend"
+                >
                   {EXPERIENCE_CHOICES.map((choice) => (
                     <label
                       key={choice.id}
@@ -199,28 +344,33 @@ function App() {
                         name="experience"
                         value={choice.id}
                         checked={formState.experience === choice.id}
-                        onChange={(event) => updateField("experience", event.target.value)}
+                        onChange={(event) =>
+                          updateField("experience", event.target.value)
+                        }
                       />
                       <span>{choice.label}</span>
                     </label>
                   ))}
                 </div>
-              </div>
-              <div className="field">
-                <label>How likely are you to recommend our utility service?</label>
+              </fieldset>
+              <fieldset className="field">
+                <legend>How likely are you to recommend our utility service?</legend>
                 <div className="scale">
-                  {Array.from({ length: 10 }, (_, idx) => idx + 1).map((score) => (
-                    <button
-                      key={score}
-                      type="button"
-                      className={formState.nps === score ? "active" : ""}
-                      onClick={() => updateField("nps", score)}
-                    >
-                      {score}
-                    </button>
-                  ))}
+                  {Array.from({ length: 10 }, (_, idx) => idx + 1).map(
+                    (score) => (
+                      <button
+                        key={score}
+                        type="button"
+                        className={formState.nps === score ? "active" : ""}
+                        aria-pressed={formState.nps === score}
+                        onClick={() => updateField("nps", score)}
+                      >
+                        {score}
+                      </button>
+                    )
+                  )}
                 </div>
-              </div>
+              </fieldset>
             </>
           )}
 
@@ -232,17 +382,27 @@ function App() {
                   {TOPIC_LABELS.map((topic) => (
                     <div key={topic.id} className="option-card active">
                       <span>{topic.label}</span>
-                      <div className="scale" aria-label={`${topic.label} rating`}>
-                        {Array.from({ length: 5 }, (_, idx) => idx + 1).map((value) => (
-                          <button
-                            key={value}
-                            type="button"
-                            className={formState.topics[topic.id] === value ? "active" : ""}
-                            onClick={() => updateTopic(topic.id, value)}
-                          >
-                            {value}
-                          </button>
-                        ))}
+                      <div
+                        className="scale"
+                        aria-label={`${topic.label} rating`}
+                      >
+                        {Array.from({ length: 5 }, (_, idx) => idx + 1).map(
+                          (value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className={
+                                formState.topics[topic.id] === value
+                                  ? "active"
+                                  : ""
+                              }
+                              aria-pressed={formState.topics[topic.id] === value}
+                              onClick={() => updateTopic(topic.id, value)}
+                            >
+                              {value}
+                            </button>
+                          )
+                        )}
                       </div>
                     </div>
                   ))}
@@ -259,7 +419,9 @@ function App() {
                   id="feedback"
                   placeholder="Tell us about service reliability, communication, or water quality."
                   value={formState.feedback}
-                  onChange={(event) => updateField("feedback", event.target.value)}
+                  onChange={(event) =>
+                    updateField("feedback", event.target.value)
+                  }
                   required
                 />
               </div>
@@ -268,7 +430,9 @@ function App() {
                   <input
                     type="checkbox"
                     checked={formState.followUp}
-                    onChange={(event) => updateField("followUp", event.target.checked)}
+                    onChange={(event) =>
+                      updateField("followUp", event.target.checked)
+                    }
                   />
                   &nbsp;It's okay to contact me about my feedback
                 </label>
@@ -288,13 +452,29 @@ function App() {
                 <strong>{formState.email}</strong>
               </div>
               <div className="summary-item">
+                <span>Phone</span>
+                <strong>{formState.phone || "Not provided"}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Account number</span>
+                <strong>{formState.accountNumber || "Not provided"}</strong>
+              </div>
+              <div className="summary-item">
+                <span>Service zone</span>
+                <strong>{formState.zone}</strong>
+              </div>
+              <div className="summary-item">
                 <span>Purpose</span>
                 <strong>{formState.purpose}</strong>
               </div>
               <div className="summary-item">
                 <span>Experience</span>
                 <strong>
-                  {EXPERIENCE_CHOICES.find((choice) => choice.id === formState.experience)?.label}
+                  {
+                    EXPERIENCE_CHOICES.find(
+                      (choice) => choice.id === formState.experience
+                    )?.label
+                  }
                 </strong>
               </div>
               <div className="summary-item">
@@ -312,6 +492,7 @@ function App() {
             </section>
           )}
 
+          {saveError && <p className="error">{saveError}</p>}
           <div className="actions">
             <button
               type="button"
@@ -321,8 +502,16 @@ function App() {
             >
               Back
             </button>
-            <button className="primary" type="submit" disabled={!canMoveNext}>
-              {step === STEP_LABELS.length - 1 ? "Submit survey" : "Continue"}
+            <button
+              className="primary"
+              type="submit"
+              disabled={!canMoveNext || isSaving}
+            >
+              {step === STEP_LABELS.length - 1
+                ? isSaving
+                  ? "Saving..."
+                  : "Submit survey"
+                : "Continue"}
             </button>
           </div>
         </form>
