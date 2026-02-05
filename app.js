@@ -94,6 +94,7 @@ function App() {
   const [formState, setFormState] = useState(DEFAULT_STATE);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const progress = useMemo(
     () => ((step + 1) / STEP_LABELS.length) * 100,
@@ -153,6 +154,7 @@ function App() {
 
     setIsSaving(true);
     setSaveError("");
+    setSaveSuccess(false);
     const submissionId = hashString(buildDedupKey(formState, overallScore));
     const payload = {
       ...formState,
@@ -169,6 +171,7 @@ function App() {
       });
 
       // With no-cors we can't read the response; assume success if no error.
+      setSaveSuccess(true);
       return true;
     } catch (error) {
       setSaveError("We couldn't save your response. Please try again.");
@@ -201,6 +204,7 @@ function App() {
     setFormState(DEFAULT_STATE);
     setStep(0);
     setSubmitted(false);
+    setSaveSuccess(false);
   };
 
   return (
@@ -235,6 +239,9 @@ function App() {
       {submitted ? (
         <section className="thank-you" aria-live="polite">
           <h2>Thanks for your feedback, {formState.name}!</h2>
+          {saveSuccess && (
+            <p className="success">Response saved. Thank you!</p>
+          )}
           <p>
             We have recorded your responses and will share improvements with our
             service team. Your overall satisfaction score:{" "}
