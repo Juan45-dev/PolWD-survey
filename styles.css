@@ -291,11 +291,39 @@ fieldset.field > legend {
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
 }
 
+.field-help {
+  margin: 0;
+  font-size: 13px;
+  color: #1f3b57;
+}
+
 .field-hint {
   margin: 0;
   font-size: 12px;
   color: #b91c1c;
   font-weight: 600;
+}
+
+.choice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.choice-pill {
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #0b223d;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.choice-pill.active {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.2);
 }
 
 .options {

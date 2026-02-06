@@ -14,36 +14,50 @@ const EXPERIENCE_CHOICES = [
   { id: "poor", label: "Needs work" },
 ];
 
-const PURPOSE_OPTIONS = [
-  "Residential service",
-  "Commercial service",
-  "Move-in or move-out",
-  "Reporting an issue",
-];
-
-const ZONE_OPTIONS = [
-  "North Zone",
-  "East Zone",
-  "South Zone",
-  "West Zone",
-  "Central Zone",
+const FEEDBACK_OPTIONS = [
+  "Improve water pressure",
+  "Improve water quality",
+  "Faster response to issues",
+  "Clearer billing",
+  "Better communication",
+  "More consistent schedule",
 ];
 
 const STEP_LABELS = ["Account", "Service", "Ratings", "Comments", "Review"];
 
-const SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxXJcpdugxC7mEZDO018ZJmrZIWo19eWxEa8ybx20FQOrXKv7mZWI426pynoKRXfRXD/exec";
+const SURVEY_COPY = {
+  2026: {
+    feedbackLabel: "What could we improve this year?",
+    feedbackPlaceholder:
+      "Tell us about service reliability, communication, or water quality.",
+  },
+  2027: {
+    feedbackLabel: "What should we focus on next year?",
+    feedbackPlaceholder: "Share the top improvement you want next year.",
+  },
+  default: {
+    feedbackLabel: "What could we improve?",
+    feedbackPlaceholder:
+      "Tell us about service reliability, communication, or water quality.",
+  },
+};
 
-const PHONE_PATTERN = /^\+?[0-9\s()-]{7,}$/;
+const getSurveyCopy = (year) => SURVEY_COPY[year] || SURVEY_COPY.default;
+
+// Replace with your Firebase project config from Firebase Console > Project settings.
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+};
+
 const ACCOUNT_PATTERN = /^[A-Za-z0-9-]{5,}$/;
 
-const buildDedupKey = (state) => {
-  return [
-    state.email.trim().toLowerCase(),
-    state.phone.trim(),
-    state.accountNumber.trim().toLowerCase(),
-  ].join("|");
-};
+const buildDedupKey = (state) =>
+  hashString((state.accountNumber || "").trim().toLowerCase());
 
 const hashString = (value) => {
   let hash = 0;
@@ -54,58 +68,15 @@ const hashString = (value) => {
   return `sub_${Math.abs(hash)}`;
 };
 
-const checkDuplicateOnServer = (dedupeKey, state) => {
-  if (!dedupeKey) {
-    return Promise.resolve(false);
+const getSubmitSurvey = () => {
+  if (typeof firebase === "undefined" || !firebase.apps.length) {
+    firebase.initializeApp(FIREBASE_CONFIG);
   }
-
-  return new Promise((resolve) => {
-    const callbackName = `pwdDupCb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const script = document.createElement("script");
-    const params = new URLSearchParams({
-      action: "check",
-      dedupeKey,
-      name: state.name || "",
-      email: state.email || "",
-      phone: state.phone || "",
-      accountNumber: state.accountNumber || "",
-      callback: callbackName,
-    });
-
-    const cleanup = () => {
-      delete window[callbackName];
-      script.remove();
-    };
-
-    const timeoutId = setTimeout(() => {
-      cleanup();
-      resolve(false);
-    }, 4000);
-
-    window[callbackName] = (payload) => {
-      clearTimeout(timeoutId);
-      cleanup();
-      resolve(payload && payload.status === "duplicate");
-    };
-
-    script.src = `${SCRIPT_URL}?${params.toString()}`;
-    script.onerror = () => {
-      clearTimeout(timeoutId);
-      cleanup();
-      resolve(false);
-    };
-
-    document.body.appendChild(script);
-  });
+  return firebase.functions().httpsCallable("submitSurvey");
 };
 
 const DEFAULT_STATE = {
-  name: "",
-  email: "",
-  phone: "",
   accountNumber: "",
-  zone: "Central Zone",
-  purpose: "Residential service",
   experience: "good",
   nps: 8,
   topics: {
@@ -114,7 +85,7 @@ const DEFAULT_STATE = {
     billing: 4,
     support: 4,
   },
-  feedback: "",
+  feedback: [],
   followUp: true,
 };
 
@@ -127,6 +98,10 @@ function App() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [duplicateNotice, setDuplicateNotice] = useState(false);
   const [feedbackTouched, setFeedbackTouched] = useState(false);
+  const surveyCopy = useMemo(
+    () => getSurveyCopy(new Date().getFullYear()),
+    []
+  );
 
   const progress = useMemo(
     () => ((step + 1) / STEP_LABELS.length) * 100,
@@ -139,11 +114,6 @@ function App() {
     return (total / values.length).toFixed(1);
   }, [formState.topics]);
 
-  const isPhoneValid = useMemo(() => {
-    const value = formState.phone.trim();
-    return value.length === 0 || PHONE_PATTERN.test(value);
-  }, [formState.phone]);
-
   const isAccountValid = useMemo(() => {
     const value = formState.accountNumber.trim();
     return value.length === 0 || ACCOUNT_PATTERN.test(value);
@@ -151,18 +121,13 @@ function App() {
 
   const canMoveNext = useMemo(() => {
     if (step === 0) {
-      return (
-        formState.name.trim().length > 0 &&
-        formState.email.trim().length > 0 &&
-        isPhoneValid &&
-        isAccountValid
-      );
+      return isAccountValid && formState.accountNumber.trim().length > 0;
     }
     if (step === 3) {
-      return formState.feedback.trim().length > 4;
+      return formState.feedback.length > 0;
     }
     return true;
-  }, [formState, isAccountValid, isPhoneValid, step]);
+  }, [formState, isAccountValid, step]);
 
   const updateField = (field, value) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -178,9 +143,21 @@ function App() {
     }));
   };
 
+  const toggleFeedbackOption = (option) => {
+    setFormState((prev) => {
+      const exists = prev.feedback.includes(option);
+      return {
+        ...prev,
+        feedback: exists
+          ? prev.feedback.filter((item) => item !== option)
+          : [...prev.feedback, option],
+      };
+    });
+  };
+
   const sendResponse = async () => {
-    if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_SCRIPT_ID")) {
-      setSaveError("Missing Google Sheets script URL.");
+    if (!FIREBASE_CONFIG.projectId || FIREBASE_CONFIG.projectId === "YOUR_PROJECT_ID") {
+      setSaveError("Firebase is not configured. Set FIREBASE_CONFIG in app.js.");
       return "error";
     }
 
@@ -188,35 +165,30 @@ function App() {
     setSaveError("");
     setSaveSuccess(false);
     const dedupeKey = buildDedupKey(formState);
-    const submissionId = hashString(dedupeKey);
+    const submissionId = dedupeKey;
     const localDuplicate =
       dedupeKey.length > 0 &&
       localStorage.getItem(`pwdSubmission:${submissionId}`) === "1";
     setDuplicateNotice(localDuplicate);
 
-    const serverDuplicate = await checkDuplicateOnServer(dedupeKey, formState);
-    if (serverDuplicate) {
-      setDuplicateNotice(true);
-      setIsSaving(false);
-      return "duplicate";
-    }
-
     const payload = {
       ...formState,
+      accountNumber: dedupeKey,
       overallScore,
+      feedback: formState.feedback.join(", "),
       dedupeKey,
       submissionId,
       submittedAt: new Date().toISOString(),
     };
 
     try {
-      const response = await fetch(SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: JSON.stringify(payload),
-      });
+      const submitSurvey = getSubmitSurvey();
+      const { data } = await submitSurvey(payload);
 
-      // With no-cors we can't read the response; assume success if no error.
+      if (data && data.duplicate) {
+        setDuplicateNotice(true);
+        return "duplicate";
+      }
       if (!localDuplicate) {
         setSaveSuccess(true);
       }
@@ -293,7 +265,7 @@ function App() {
 
       {submitted ? (
         <section className="thank-you" aria-live="polite">
-          <h2>Thanks for your feedback, {formState.name}!</h2>
+          <h2>Thanks for your feedback!</h2>
           {saveSuccess && (
             <p className="success">Response saved. Thank you!</p>
           )}
@@ -316,34 +288,6 @@ function App() {
           {step === 0 && (
             <>
               <div className="field">
-                <label htmlFor="name">Your name</label>
-                <input
-                  id="name"
-                  type="text"
-                  placeholder="Avery Johnson"
-                  autoComplete="name"
-                  value={formState.name}
-                  onChange={(event) => updateField("name", event.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="phone">Phone number</label>
-                <input
-                  id="phone"
-                  type="tel"
-                  placeholder="+1 555 123 4567"
-                  autoComplete="tel"
-                  inputMode="tel"
-                  aria-invalid={!isPhoneValid}
-                  value={formState.phone}
-                  onChange={(event) => updateField("phone", event.target.value)}
-                />
-                {!isPhoneValid && (
-                  <p className="field-hint">Enter at least 7 digits.</p>
-                )}
-              </div>
-              <div className="field">
                 <label htmlFor="accountNumber">Account number</label>
                 <input
                   id="accountNumber"
@@ -354,52 +298,11 @@ function App() {
                   onChange={(event) =>
                     updateField("accountNumber", event.target.value)
                   }
+                  required
                 />
                 {!isAccountValid && (
                   <p className="field-hint">Use at least 5 letters or numbers.</p>
                 )}
-              </div>
-              <div className="field">
-                <label htmlFor="email">Email address</label>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="avery@email.com"
-                  autoComplete="email"
-                  value={formState.email}
-                  onChange={(event) => updateField("email", event.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="zone">Service zone</label>
-                <select
-                  id="zone"
-                  value={formState.zone}
-                  onChange={(event) => updateField("zone", event.target.value)}
-                >
-                  {ZONE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="purpose">Purpose of contact</label>
-                <select
-                  id="purpose"
-                  value={formState.purpose}
-                  onChange={(event) =>
-                    updateField("purpose", event.target.value)
-                  }
-                >
-                  {PURPOSE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
               </div>
             </>
           )}
@@ -497,24 +400,26 @@ function App() {
           {step === 3 && (
             <>
               <div className="field">
-                <label htmlFor="feedback">What could we improve?</label>
-                <textarea
-                  id="feedback"
-                  placeholder="Tell us about service reliability, communication, or water quality."
-                    className={
-                      feedbackTouched && formState.feedback.trim().length < 5
-                        ? "invalid"
-                        : ""
-                    }
-                  value={formState.feedback}
-                    onChange={(event) =>
-                      updateField("feedback", event.target.value)
-                    }
-                    onBlur={() => setFeedbackTouched(true)}
-                  required
-                />
-                {feedbackTouched && formState.feedback.trim().length < 5 && (
-                  <p className="field-hint">Please add a short comment before continuing.</p>
+                <label>{surveyCopy.feedbackLabel}</label>
+                <p className="field-help">{surveyCopy.feedbackPlaceholder}</p>
+                <div className="choice-grid">
+                  {FEEDBACK_OPTIONS.map((option) => {
+                    const isActive = formState.feedback.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`choice-pill ${isActive ? "active" : ""}`}
+                        aria-pressed={isActive}
+                        onClick={() => toggleFeedbackOption(option)}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+                {feedbackTouched && formState.feedback.length === 0 && (
+                  <p className="field-hint">Please choose at least one option.</p>
                 )}
               </div>
               <div className="field">
@@ -536,28 +441,8 @@ function App() {
             <section className="summary">
               <h2>Review your answers</h2>
               <div className="summary-item">
-                <span>Name</span>
-                <strong>{formState.name}</strong>
-              </div>
-              <div className="summary-item">
-                <span>Email</span>
-                <strong>{formState.email}</strong>
-              </div>
-              <div className="summary-item">
-                <span>Phone</span>
-                <strong>{formState.phone || "Not provided"}</strong>
-              </div>
-              <div className="summary-item">
                 <span>Account number</span>
                 <strong>{formState.accountNumber || "Not provided"}</strong>
-              </div>
-              <div className="summary-item">
-                <span>Service zone</span>
-                <strong>{formState.zone}</strong>
-              </div>
-              <div className="summary-item">
-                <span>Purpose</span>
-                <strong>{formState.purpose}</strong>
               </div>
               <div className="summary-item">
                 <span>Experience</span>
@@ -579,7 +464,11 @@ function App() {
               </div>
               <div className="summary-item">
                 <span>Feedback</span>
-                <strong>{formState.feedback}</strong>
+                <strong>
+                  {formState.feedback.length > 0
+                    ? formState.feedback.join(", ")
+                    : "No selection"}
+                </strong>
               </div>
             </section>
           )}
