@@ -32,31 +32,16 @@ const ZONE_OPTIONS = [
 const STEP_LABELS = ["Account", "Service", "Ratings", "Comments", "Review"];
 
 const SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxT3RAA8W2BSQIPGY0BX_nRhQQDY2Dkb6BBoMWo5o5S1wfclT3_ysMuyMlPn2N--hXz/exec";
+  "https://script.google.com/macros/s/AKfycbxXJcpdugxC7mEZDO018ZJmrZIWo19eWxEa8ybx20FQOrXKv7mZWI426pynoKRXfRXD/exec";
 
 const PHONE_PATTERN = /^\+?[0-9\s()-]{7,}$/;
 const ACCOUNT_PATTERN = /^[A-Za-z0-9-]{5,}$/;
 
-const buildDedupKey = (state, overallScoreValue) => {
-  const topicValues = [
-    state.topics.pressure,
-    state.topics.quality,
-    state.topics.billing,
-    state.topics.support,
-  ];
+const buildDedupKey = (state) => {
   return [
-    state.name.trim().toLowerCase(),
     state.email.trim().toLowerCase(),
     state.phone.trim(),
     state.accountNumber.trim().toLowerCase(),
-    state.zone,
-    state.purpose,
-    state.experience,
-    state.nps,
-    ...topicValues,
-    overallScoreValue,
-    state.feedback.trim().toLowerCase(),
-    state.followUp ? "yes" : "no",
   ].join("|");
 };
 
@@ -67,6 +52,51 @@ const hashString = (value) => {
     hash |= 0;
   }
   return `sub_${Math.abs(hash)}`;
+};
+
+const checkDuplicateOnServer = (dedupeKey, state) => {
+  if (!dedupeKey) {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    const callbackName = `pwdDupCb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const script = document.createElement("script");
+    const params = new URLSearchParams({
+      action: "check",
+      dedupeKey,
+      name: state.name || "",
+      email: state.email || "",
+      phone: state.phone || "",
+      accountNumber: state.accountNumber || "",
+      callback: callbackName,
+    });
+
+    const cleanup = () => {
+      delete window[callbackName];
+      script.remove();
+    };
+
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, 4000);
+
+    window[callbackName] = (payload) => {
+      clearTimeout(timeoutId);
+      cleanup();
+      resolve(payload && payload.status === "duplicate");
+    };
+
+    script.src = `${SCRIPT_URL}?${params.toString()}`;
+    script.onerror = () => {
+      clearTimeout(timeoutId);
+      cleanup();
+      resolve(false);
+    };
+
+    document.body.appendChild(script);
+  });
 };
 
 const DEFAULT_STATE = {
@@ -95,6 +125,8 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState(false);
+  const [feedbackTouched, setFeedbackTouched] = useState(false);
 
   const progress = useMemo(
     () => ((step + 1) / STEP_LABELS.length) * 100,
@@ -149,16 +181,30 @@ function App() {
   const sendResponse = async () => {
     if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR_SCRIPT_ID")) {
       setSaveError("Missing Google Sheets script URL.");
-      return false;
+      return "error";
     }
 
     setIsSaving(true);
     setSaveError("");
     setSaveSuccess(false);
-    const submissionId = hashString(buildDedupKey(formState, overallScore));
+    const dedupeKey = buildDedupKey(formState);
+    const submissionId = hashString(dedupeKey);
+    const localDuplicate =
+      dedupeKey.length > 0 &&
+      localStorage.getItem(`pwdSubmission:${submissionId}`) === "1";
+    setDuplicateNotice(localDuplicate);
+
+    const serverDuplicate = await checkDuplicateOnServer(dedupeKey, formState);
+    if (serverDuplicate) {
+      setDuplicateNotice(true);
+      setIsSaving(false);
+      return "duplicate";
+    }
+
     const payload = {
       ...formState,
       overallScore,
+      dedupeKey,
       submissionId,
       submittedAt: new Date().toISOString(),
     };
@@ -171,11 +217,16 @@ function App() {
       });
 
       // With no-cors we can't read the response; assume success if no error.
-      setSaveSuccess(true);
-      return true;
+      if (!localDuplicate) {
+        setSaveSuccess(true);
+      }
+      if (dedupeKey.length > 0) {
+        localStorage.setItem(`pwdSubmission:${submissionId}`, "1");
+      }
+      return "ok";
     } catch (error) {
       setSaveError("We couldn't save your response. Please try again.");
-      return false;
+      return "error";
     } finally {
       setIsSaving(false);
     }
@@ -184,14 +235,17 @@ function App() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canMoveNext) {
+      if (step === 3) {
+        setFeedbackTouched(true);
+      }
       return;
     }
     if (step < STEP_LABELS.length - 1) {
       setStep((prev) => prev + 1);
       return;
     }
-    const saved = await sendResponse();
-    if (saved) {
+    const result = await sendResponse();
+    if (result === "ok" || result === "duplicate") {
       setSubmitted(true);
     }
   };
@@ -205,6 +259,7 @@ function App() {
     setStep(0);
     setSubmitted(false);
     setSaveSuccess(false);
+    setDuplicateNotice(false);
   };
 
   return (
@@ -241,6 +296,9 @@ function App() {
           <h2>Thanks for your feedback, {formState.name}!</h2>
           {saveSuccess && (
             <p className="success">Response saved. Thank you!</p>
+          )}
+          {duplicateNotice && (
+            <p className="warning">Only one submission per person is allowed.</p>
           )}
           <p>
             We have recorded your responses and will share improvements with our
@@ -443,12 +501,21 @@ function App() {
                 <textarea
                   id="feedback"
                   placeholder="Tell us about service reliability, communication, or water quality."
+                    className={
+                      feedbackTouched && formState.feedback.trim().length < 5
+                        ? "invalid"
+                        : ""
+                    }
                   value={formState.feedback}
-                  onChange={(event) =>
-                    updateField("feedback", event.target.value)
-                  }
+                    onChange={(event) =>
+                      updateField("feedback", event.target.value)
+                    }
+                    onBlur={() => setFeedbackTouched(true)}
                   required
                 />
+                {feedbackTouched && formState.feedback.trim().length < 5 && (
+                  <p className="field-hint">Please add a short comment before continuing.</p>
+                )}
               </div>
               <div className="field">
                 <label>
