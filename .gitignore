@@ -8,3 +8,6 @@ firebase-debug*.log.*
 *.local
 .env
 .env.*
+
+# Cursor IDE (keep local, do not commit)
+.cursor/

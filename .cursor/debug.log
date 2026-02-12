@@ -1,7 +1,0 @@
-{"location":"app.js:getRoute","message":"Route is admin (hash-based)","data":{"hash":"#/admin"},"timestamp":1770615797374,"hypothesisId":"H1"}
-{"location":"app.js:admin-render","message":"Admin gate","data":{"route":"admin","adminPanelShown":true},"timestamp":1770615797394,"hypothesisId":"H1"}
-{"location":"app.js:getLocalSurveyConfig","message":"Config load from storage","data":{"hasStored":true,"key":"pwd_survey_config"},"timestamp":1770615797387,"hypothesisId":"H3"}
-{"location":"app.js:getRoute","message":"Route is admin (hash-based)","data":{"hash":"#/admin"},"timestamp":1770615797389,"hypothesisId":"H1"}
-{"location":"app.js:admin-render","message":"Admin gate","data":{"route":"admin","adminPanelShown":true},"timestamp":1770615797390,"hypothesisId":"H1"}
-{"location":"app.js:getRoute","message":"Route is admin (hash-based)","data":{"hash":"#/admin"},"timestamp":1770615797393,"hypothesisId":"H1"}
-{"location":"app.js:admin-render","message":"Admin gate","data":{"route":"admin","adminPanelShown":true},"timestamp":1770615797376,"hypothesisId":"H1"}
