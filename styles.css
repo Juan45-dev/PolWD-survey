@@ -15,7 +15,7 @@
  *   Error / success – .error, .success, .survey-error-popup
  *   Buttons & actions – .actions, .primary, .secondary
  *   Landing         – .survey-landing, .survey-landing-card, .survey-landing-cta
- *   Media queries  – @media (max-width: 720px), (640px), (520px)
+ *   Media queries  – @media (max-width: 720px), (640px), (520px), (600px) mobile compact
  */
 * {
   box-sizing: border-box;
@@ -1823,6 +1823,261 @@ fieldset.field > legend {
 
   .scale {
     grid-template-columns: repeat(5, minmax(36px, 1fr));
+  }
+}
+
+/* ========== Mobile (max-width: 600px) – compact size scale so it’s not too large ========== */
+@media (max-width: 600px) {
+  body {
+    padding: 6px 4px;
+  }
+
+  body.page--admin {
+    padding-top: 8px;
+  }
+
+  .survey-shell {
+    width: min(1200px, calc(100vw - 8px));
+    padding: 10px 8px;
+    border-radius: 12px;
+    gap: 14px;
+  }
+
+  .survey-shell--landing .survey-header p {
+    max-width: 100%;
+  }
+
+  .brand {
+    padding: 8px 10px;
+    border-radius: 10px;
+    gap: 8px;
+  }
+
+  .brand-logo {
+    width: 44px;
+    height: 44px;
+  }
+
+  .brand-name {
+    font-size: 17px;
+  }
+
+  .brand-tagline {
+    font-size: 12px;
+  }
+
+  .survey-header h1 {
+    font-size: 18px;
+  }
+
+  .survey-header p {
+    font-size: 13px;
+  }
+
+  .progress {
+    height: 6px;
+  }
+
+  .survey-grid {
+    gap: 10px;
+  }
+
+  .question-row {
+    padding: 10px 12px;
+    border-radius: 10px;
+    gap: 10px;
+  }
+
+  .question-label {
+    font-size: 14px;
+  }
+
+  .question-help {
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  .question-row--sqd {
+    padding: 8px 10px;
+  }
+
+  .question-row--sqd .question-label {
+    font-size: 13px;
+  }
+
+  .field input[type="text"],
+  .field input[type="email"],
+  .field input[type="date"],
+  .field select,
+  .field textarea {
+    min-height: 42px;
+    padding: 8px 10px;
+    font-size: 16px;
+  }
+
+  .field textarea {
+    min-height: 72px;
+  }
+
+  .options {
+    gap: 8px;
+  }
+
+  .option-card {
+    padding: 10px 8px;
+    border-radius: 8px;
+    flex: 1 1 100%;
+  }
+
+  .option-card span {
+    font-size: 13px;
+  }
+
+  .scale.scale-6 {
+    grid-template-columns: repeat(6, minmax(28px, 1fr));
+    gap: 4px;
+  }
+
+  .scale.scale-6 button {
+    min-height: 34px;
+    padding: 6px 0;
+    font-size: 10px;
+  }
+
+  .likert-header {
+    padding: 0;
+    font-size: 10px;
+  }
+
+  .likert-head-long {
+    font-size: 8px;
+  }
+
+  .actions.form-actions {
+    padding: 10px 8px;
+    border-radius: 10px;
+  }
+
+  .actions.form-actions button {
+    flex: 1 1 100px;
+  }
+
+  .actions.form-actions .primary,
+  .actions.form-actions .secondary {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .summary-grid {
+    gap: 8px;
+  }
+
+  .summary-section {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .summary-section h3 {
+    font-size: 14px;
+  }
+
+  .thank-you {
+    padding: 14px 0;
+    gap: 8px;
+  }
+
+  .thank-you h2 {
+    font-size: 18px;
+  }
+
+  .thank-you-local {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .survey-landing {
+    padding: 10px 0 18px;
+  }
+
+  .survey-landing-card {
+    padding: 16px 12px 20px;
+    border-radius: 14px;
+    gap: 12px;
+    max-width: 100%;
+  }
+
+  .survey-landing-card h2 {
+    font-size: 18px;
+  }
+
+  .survey-landing-cta {
+    min-height: 44px;
+    padding: 12px 20px;
+    font-size: 15px;
+    border-radius: 12px;
+  }
+
+  .required-error-toast {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  /* Admin panel on mobile */
+  .survey-shell--admin .survey-shell-inner {
+    padding: 8px;
+  }
+
+  .admin-intro {
+    font-size: 13px;
+  }
+
+  .admin-section {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .admin-section-title {
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+
+  .admin-subsection-title {
+    margin: 10px 0 4px;
+    font-size: 13px;
+  }
+
+  .admin-questions-grid {
+    gap: 6px 10px;
+  }
+
+  .admin-row,
+  .admin-row-sqd {
+    padding: 4px 6px;
+    margin-bottom: 2px;
+  }
+
+  .admin-row input,
+  .admin-field-question input {
+    min-height: 38px;
+    font-size: 14px;
+  }
+
+  .admin-toolbar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .admin-toolbar .primary,
+  .admin-toolbar .secondary {
+    min-height: 42px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .admin-header-actions .primary {
+    padding: 8px 14px;
+    font-size: 14px;
   }
 }
 
