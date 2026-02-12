@@ -1,6 +1,27 @@
+/**
+ * PWD Survey – Main styles.
+ *
+ * NAVIGATION (Ctrl+F / Cmd+F to jump):
+ *   Reset & root     – *, :root, body, #root, body::before, .sr-only
+ *   Background fade – @keyframes bgFade
+ *   Loading screen  – .loading-screen, .loader-card, .loader-logo, logoReveal
+ *   Survey shell    – .survey-shell, --admin, --landing, header, .brand, .progress
+ *   Form & fields   – .survey-grid, .question-row, .field, inputs, textarea, .options
+ *   Option cards    – .option-card, .options--cc1, .options--cc2, .options--cc3
+ *   Scale / Likert  – .scale, .scale-6, .likert-block, .likert-header
+ *   Summary        – .summary-grid, .summary-section, .summary-sqd
+ *   Admin panel     – .admin-intro, .admin-toolbar, .admin-form, .admin-section, .admin-row
+ *   Thank-you       – .thank-you, .thank-you-local
+ *   Error / success – .error, .success, .survey-error-popup
+ *   Buttons & actions – .actions, .primary, .secondary
+ *   Landing         – .survey-landing, .survey-landing-card, .survey-landing-cta
+ *   Media queries  – @media (max-width: 720px), (640px), (520px)
+ */
 * {
   box-sizing: border-box;
 }
+
+/* ========== Reset & root ========== */
 
 :root {
   color-scheme: light;
@@ -58,6 +79,7 @@ body::before {
   border: 0;
 }
 
+/* ========== Background fade (hero image carousel) ========== */
 .survey-shell {
   position: relative;
   z-index: 1;
@@ -103,6 +125,7 @@ body::before {
   }
 }
 
+/* ========== Loading screen ========== */
 .loading-screen {
   position: fixed;
   inset: 0;
@@ -157,7 +180,7 @@ body::before {
   }
 }
 
-
+/* ========== Survey shell & header ========== */
 .survey-shell {
   width: min(1200px, calc(100vw - 24px));
   max-width: 100%;
@@ -310,20 +333,6 @@ body::before {
   font-size: 16px;
 }
 
-.survey-header-admin {
-  margin: 8px 0 0;
-  font-size: 14px;
-}
-
-.survey-header-admin a {
-  color: #0ea5e9;
-  text-decoration: none;
-}
-
-.survey-header-admin a:hover {
-  text-decoration: underline;
-}
-
 .progress {
   height: 10px;
   border-radius: 999px;
@@ -338,9 +347,46 @@ body::before {
   transition: width 0.3s ease;
 }
 
+/* ========== Form & fields ========== */
 .survey-grid {
   display: grid;
   gap: 20px;
+}
+
+.survey-grid--required-error {
+  animation: formShake 0.5s ease-in-out;
+}
+
+@keyframes formShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(10px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+.required-error-toast {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  text-align: center;
+  animation: toastIn 0.3s ease-out;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .question-row {
@@ -369,6 +415,11 @@ body::before {
   line-height: 1.4;
 }
 
+.required-star {
+  color: #b91c1c;
+  font-weight: 800;
+}
+
 .question-right {
   display: grid;
   gap: 10px;
@@ -384,6 +435,13 @@ fieldset.field {
   padding: 0;
   margin: 0;
   min-width: 0;
+}
+
+fieldset.field.field--required {
+  border: 1px solid rgba(185, 28, 28, 0.6);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.25), 0 0 12px rgba(185, 28, 28, 0.25);
 }
 
 fieldset.field > legend {
@@ -412,6 +470,25 @@ fieldset.field > legend {
   background: #f8fafc;
   color: #0b223d;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.field--required input[type="text"],
+.field--required input[type="date"],
+.field--required input[type="number"],
+.field--required select,
+.field--required textarea {
+  border-color: rgba(185, 28, 28, 0.55) !important;
+  box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.2), 0 0 10px rgba(185, 28, 28, 0.2) !important;
+}
+
+/* Keep red error state visible even when field is focused */
+.field--required input[type="text"]:focus,
+.field--required input[type="date"]:focus,
+.field--required input[type="number"]:focus,
+.field--required select:focus,
+.field--required textarea:focus {
+  border-color: rgba(185, 28, 28, 0.6) !important;
+  box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.25), 0 0 12px rgba(185, 28, 28, 0.25) !important;
 }
 
 .field input[type="text"]:focus,
@@ -472,6 +549,7 @@ fieldset.field > legend {
   font-weight: 600;
 }
 
+/* ========== Option cards (radio groups, CC1/CC2/CC3) ========== */
 .choice-grid {
   display: flex;
   flex-wrap: wrap;
@@ -504,7 +582,7 @@ fieldset.field > legend {
   height: 18px;
 }
 
-/* Admin panel: intro and toolbar */
+/* ========== Admin panel ========== */
 .admin-intro {
   max-width: 520px;
   line-height: 1.5;
@@ -541,9 +619,19 @@ fieldset.field > legend {
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.4);
 }
 
+.admin-toolbar .primary:hover:not(:disabled),
+.admin-toolbar .secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
 .admin-toolbar .primary:active,
 .admin-toolbar .secondary:active {
-  transform: scale(0.98);
+  transform: translateY(0) scale(0.98);
+}
+
+.survey-shell--admin .admin-header-actions .primary {
+  min-height: 44px;
+  padding: 12px 24px;
 }
 
 .admin-form {
@@ -692,6 +780,9 @@ fieldset.field > legend {
 }
 
 .admin-row-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
   padding: 6px 10px 8px;
   margin-bottom: 2px;
   background: transparent;
@@ -701,6 +792,11 @@ fieldset.field > legend {
 
 .admin-row-header:hover {
   background: transparent;
+}
+
+.admin-row-header .admin-col-label:first-child {
+  width: 28px;
+  flex-shrink: 0;
 }
 
 .admin-col-label {
@@ -715,6 +811,79 @@ fieldset.field > legend {
 .admin-col-action {
   width: 34px;
   flex-shrink: 0;
+}
+
+.admin-step-num {
+  flex-shrink: 0;
+  width: 28px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.admin-btn-reset-labels {
+  margin-top: 10px;
+  padding: 8px 14px;
+  font-size: 0.875rem;
+}
+
+/* Edit questions section */
+.admin-subsection-title {
+  margin: 16px 0 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.admin-questions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px 16px;
+  margin-bottom: 12px;
+}
+
+.admin-field-question label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.admin-field-question input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-size: 0.9375rem;
+  box-sizing: border-box;
+}
+
+.admin-field-question--full {
+  grid-column: 1 / -1;
+}
+
+.admin-sqd-list {
+  margin-bottom: 12px;
+}
+
+.admin-row-sqd {
+  margin-bottom: 6px;
+}
+
+.admin-row-sqd .admin-sqd-num {
+  width: 36px;
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.admin-btn-reset-questions {
+  margin-top: 10px;
+  padding: 8px 14px;
+  font-size: 0.875rem;
 }
 
 .admin-row {
@@ -1024,6 +1193,7 @@ fieldset.field > legend {
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
 }
 
+/* ========== Scale / Likert (SQD buttons) ========== */
 .scale {
   display: grid;
   grid-template-columns: repeat(10, minmax(36px, 1fr));
@@ -1136,6 +1306,7 @@ fieldset.field > legend {
   border-color: #38bdf8;
 }
 
+/* ========== Buttons & actions ========== */
 .actions {
   display: flex;
   align-items: center;
@@ -1174,16 +1345,65 @@ fieldset.field > legend {
   font-weight: 600;
   cursor: pointer;
   font-size: 16px;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
 }
 
 .actions .primary {
   background: #38bdf8;
   color: #0b223d;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.35);
+}
+
+.actions .primary:hover:not(:disabled) {
+  background: #0ea5e9;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.45);
+}
+
+.actions .primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 10px rgba(56, 189, 248, 0.4);
+}
+
+.actions .primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.5), 0 4px 14px rgba(56, 189, 248, 0.35);
+}
+
+.actions .primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .actions .secondary {
   background: rgba(148, 163, 184, 0.2);
   color: #0b223d;
+  border: 2px solid rgba(148, 163, 184, 0.4);
+}
+
+.actions .secondary:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.35);
+  border-color: rgba(148, 163, 184, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.actions .secondary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.actions .secondary:focus-visible {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
+}
+
+.actions .secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .summary {
@@ -1214,6 +1434,7 @@ fieldset.field > legend {
   font-weight: 600;
 }
 
+/* ========== Summary (review step) ========== */
 .summary-grid {
   display: grid;
   gap: 14px;
@@ -1305,6 +1526,7 @@ fieldset.field > legend {
   }
 }
 
+/* ========== Error, success, warning ========== */
 .error {
   margin: 0;
   color: #fecaca;
@@ -1335,6 +1557,7 @@ fieldset.field > legend {
   font-weight: 600;
 }
 
+/* ========== Thank-you ========== */
 .thank-you {
   text-align: center;
   display: grid;
@@ -1357,6 +1580,7 @@ fieldset.field > legend {
   border: 1px solid rgba(148, 163, 184, 0.4);
 }
 
+/* ========== Landing page ========== */
 @keyframes landingEnter {
   from {
     opacity: 0;

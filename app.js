@@ -1,6 +1,37 @@
+/**
+ * PWD Survey – ARTA Client Satisfaction (online version).
+ *
+ * Single-page app: landing → 5-step form (client info, Citizen’s Charter, SQD, suggestions, review) → thank-you.
+ * Config (title, intro, step labels) is stored in localStorage; optional Firebase for saving responses.
+ * Admin: click the header logo 5 times quickly to open the config panel (#/admin).
+ *
+ * NAVIGATION (Ctrl+F / Cmd+F to jump):
+ *   Constants          – timing, storage keys, admin year range
+ *   Survey question data – STEP_LABELS, CLIENT_TYPES, CC options, LIKERT, SQD_QUESTIONS, DEFAULT_CONFIG
+ *   Config & storage   – getLocalSurveyConfig, setLocalSurveyConfig
+ *   Firebase           – FIREBASE_CONFIG, hashString, createSubmissionId, ensureFirebase, getCallable, getRoute
+ *   Default form state – DEFAULT_STATE
+ *   QuestionRow        – reusable question row component
+ *   App() state        – route, admin, survey, form, logo click
+ *   App() effects      – hashchange, body class, load config, notices timeout, admin form sync, CC1→CC2/CC3 auto
+ *   App() validation   – canMoveNext, progress
+ *   App() handlers     – updateField, updateSQD, sendResponse, handleSubmit, handleBack, resetSurvey, openAdmin, handleLogoClick, openSurvey, loadAdminDraft, saveAdminDraft, updateAdminForm
+ *   Admin panel UI     – admin route return (year, title, intro, step labels)
+ *   Survey UI          – survey route return (header, landing, thank-you, form steps 0–4, form actions)
+ *   Mount              – ReactDOM.createRoot, root.render
+ */
 const { useEffect, useMemo, useState } = React;
 
-// ARTA Client Satisfaction Survey (Online Version) – 2025
+// ========== Constants (timing, storage keys, admin) ==========
+const ADMIN_LOGO_CLICKS = 5;
+const LOGO_CLICK_RESET_MS = 1500;
+const ADMIN_SAVE_NOTICE_MS = 3200;
+const SAVE_ERROR_DISMISS_MS = 5000;
+const LOCAL_SUBMISSIONS_KEY = "arta_submissions";
+const ADMIN_YEAR_START = 2015;
+const ADMIN_YEAR_COUNT = 26;
+
+// ========== Survey question data (ARTA 2025) ==========
 const STEP_LABELS = [
   "Client information",
   "Citizen’s Charter",
@@ -90,6 +121,30 @@ const SQD_QUESTIONS = [
   },
 ];
 
+const DEFAULT_QUESTIONS = {
+  step0: {
+    clientType: "Client type",
+    date: "Date",
+    sex: "Sex",
+    age: "Age",
+    region: "Region of residence",
+    serviceAvailed: "Service availed",
+  },
+  step1: {
+    cc1Label: "CC1: Awareness of the Citizen's Charter (CC)",
+    cc1Help: "Which of the following best describes your awareness of a CC?",
+    cc2Label: "CC2: Visibility of this office's CC",
+    cc2Help: "If aware of CC (answered 1–3 in CC1), would you say that the CC of this office was…?",
+    cc3Label: "CC3: Helpfulness of the CC",
+    cc3Help: "If aware of CC (answered 1–3 in CC1), how much did the CC help you in your transaction?",
+  },
+  sqd: SQD_QUESTIONS.map((q) => ({ id: q.id, label: q.label })),
+  step3: {
+    suggestionsLabel: "Suggestions on how we can further improve our services",
+    emailLabel: "Email address",
+  },
+};
+
 const DEFAULT_CONFIG = {
   activeYear: new Date().getFullYear(),
   version: 1,
@@ -99,9 +154,10 @@ const DEFAULT_CONFIG = {
       "This Client Satisfaction Measurement (CSM) tracks the customer experience of government offices. Your feedback on your recently concluded transaction will help this office provide a better service. Personal information shared will be kept confidential and you always have the option not to answer this form.",
   },
   stepLabels: STEP_LABELS,
+  questions: null,
 };
 
-// Set to true when Firebase is deployed and you want to save responses and use server config.
+// ========== Config & storage ==========
 const USE_FIREBASE = false;
 const CONFIG_STORAGE_KEY = "pwd_survey_config";
 
@@ -125,6 +181,19 @@ function getLocalSurveyConfig() {
     if (isLegacyConfig) {
       merged.ui = { ...DEFAULT_CONFIG.ui };
     }
+    if (merged.questions == null || typeof merged.questions !== "object") {
+      merged.questions = null;
+    } else {
+      const q = merged.questions;
+      merged.questions = {
+        step0: { ...DEFAULT_QUESTIONS.step0, ...(q.step0 && typeof q.step0 === "object" ? q.step0 : {}) },
+        step1: { ...DEFAULT_QUESTIONS.step1, ...(q.step1 && typeof q.step1 === "object" ? q.step1 : {}) },
+        step3: { ...DEFAULT_QUESTIONS.step3, ...(q.step3 && typeof q.step3 === "object" ? q.step3 : {}) },
+        sqd: Array.isArray(q.sqd) && q.sqd.length === SQD_QUESTIONS.length
+          ? q.sqd.map((item, i) => ({ ...SQD_QUESTIONS[i], ...(item && typeof item === "object" ? item : {}), id: SQD_QUESTIONS[i].id }))
+          : DEFAULT_QUESTIONS.sqd,
+      };
+    }
     return merged;
   } catch (e) {
     return DEFAULT_CONFIG;
@@ -135,7 +204,7 @@ function setLocalSurveyConfig(config) {
   localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
 }
 
-// Replace with your Firebase project config from Firebase Console > Project settings.
+// ========== Firebase (replace with your project config from Firebase Console) ==========
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCDTjJaL4CY79tEG8ue3v0N_UzfGj78Vz4",
   authDomain: "polwd-survey.firebaseapp.com",
@@ -144,11 +213,6 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "768034495490",
   appId: "1:768034495490:web:35effc3830c71210ce5b1b"
 };
-
-function slugFromLabel(label) {
-  const s = String(label || "").trim().toLowerCase();
-  return s.replace(/\s+/g, "_").replace(/[^a-z0-9_-]/g, "") || "";
-}
 
 const hashString = (value) => {
   let hash = 0;
@@ -159,6 +223,7 @@ const hashString = (value) => {
   return `sub_${Math.abs(hash)}`;
 };
 
+// ========== Firebase helpers (only used when USE_FIREBASE is true) ==========
 const createSubmissionId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `sub_${crypto.randomUUID()}`;
@@ -180,20 +245,12 @@ const getCallable = (name) => {
   return firebase.functions().httpsCallable(name);
 };
 
-const getAuth = () => {
-  ensureFirebase();
-  return firebase.auth();
-};
-
 const getRoute = () => {
   const hash = window.location.hash || "";
-  const route = hash.startsWith("#/admin") ? "admin" : "survey";
-  // #region agent log
-  if (route === "admin") fetch('http://127.0.0.1:7243/ingest/785a02aa-25d4-46af-a53c-911d3080a253',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:getRoute',message:'Route is admin (hash-based)',data:{hash: hash.substring(0,20)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-  return route;
+  return hash.startsWith("#/admin") ? "admin" : "survey";
 };
 
+// ========== Default form state (one object per submission) ==========
 const DEFAULT_STATE = {
   clientType: "",
   date: "",
@@ -219,17 +276,29 @@ const DEFAULT_STATE = {
   email: "",
 };
 
-function QuestionRow({ label, help, htmlFor, children, className = "" }) {
+// ========== Reusable UI: QuestionRow ==========
+function QuestionRow({ label, help, htmlFor, children, className = "", required = false, showError = false }) {
+  const showAsterisk = showError;
+  const labelContent = label ? (
+    showAsterisk ? (
+      <>
+        {label}
+        <span className="required-star" aria-hidden="true"> *</span>
+      </>
+    ) : (
+      label
+    )
+  ) : null;
   return (
     <div className={`question-row ${className}`.trim()}>
       <div className="question-left">
-        {label ? (
+        {labelContent ? (
           htmlFor ? (
             <label className="question-label" htmlFor={htmlFor}>
-              {label}
+              {labelContent}
             </label>
           ) : (
-            <p className="question-label">{label}</p>
+            <p className="question-label">{labelContent}</p>
           )
         ) : null}
         {help ? <p className="question-help">{help}</p> : null}
@@ -239,7 +308,9 @@ function QuestionRow({ label, help, htmlFor, children, className = "" }) {
   );
 }
 
+// ========== Main app (routing, state, submit, admin) ==========
 function App() {
+  // ----- State -----
   const [route, setRoute] = useState(getRoute());
   const [adminError, setAdminError] = useState("");
   const [adminSaveNotice, setAdminSaveNotice] = useState("");
@@ -247,6 +318,7 @@ function App() {
     activeYear: new Date().getFullYear(),
     ui: { title: "", intro: "" },
     stepLabels: [...STEP_LABELS],
+    questions: JSON.parse(JSON.stringify(DEFAULT_QUESTIONS)),
   });
 
   const [surveyStarted, setSurveyStarted] = useState(false);
@@ -262,7 +334,9 @@ function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
   const logoClickResetRef = React.useRef(null);
+  const [showRequiredError, setShowRequiredError] = useState(false);
 
+  // ----- Effects -----
   useEffect(() => {
     const onHashChange = () => setRoute(getRoute());
     window.addEventListener("hashchange", onHashChange);
@@ -293,38 +367,78 @@ function App() {
 
   useEffect(() => {
     if (!adminSaveNotice) return;
-    const t = setTimeout(() => setAdminSaveNotice(""), 3200);
+    const t = setTimeout(() => setAdminSaveNotice(""), ADMIN_SAVE_NOTICE_MS);
     return () => clearTimeout(t);
   }, [adminSaveNotice]);
 
   useEffect(() => {
     if (!saveError) return;
-    const t = setTimeout(() => setSaveError(""), 5000);
+    const t = setTimeout(() => setSaveError(""), SAVE_ERROR_DISMISS_MS);
     return () => clearTimeout(t);
   }, [saveError]);
+
+  // Normalize to exactly 5 step labels (survey expects 5 steps)
+  const normalizeStepLabels = (labels) => {
+    const base = Array.isArray(labels) ? labels.map((x) => String(x || "").trim()).filter(Boolean) : [];
+    const out = [...STEP_LABELS];
+    base.forEach((label, i) => { if (i < out.length) out[i] = label; });
+    return out;
+  };
 
   useEffect(() => {
     if (route === "admin" && configLoaded) {
       const c = surveyConfig;
+      const q = c.questions && typeof c.questions === "object" ? c.questions : DEFAULT_QUESTIONS;
       setAdminForm({
         activeYear: c.activeYear ?? new Date().getFullYear(),
         ui: {
           title: c.ui?.title ?? DEFAULT_CONFIG.ui.title,
           intro: c.ui?.intro ?? DEFAULT_CONFIG.ui.intro,
         },
-        stepLabels:
-          Array.isArray(c.stepLabels) && c.stepLabels.length
-            ? [...c.stepLabels]
-            : [...STEP_LABELS],
+        stepLabels: normalizeStepLabels(c.stepLabels),
+        questions: {
+          step0: { ...DEFAULT_QUESTIONS.step0, ...(q.step0 || {}) },
+          step1: { ...DEFAULT_QUESTIONS.step1, ...(q.step1 || {}) },
+          step3: { ...DEFAULT_QUESTIONS.step3, ...(q.step3 || {}) },
+          sqd: Array.isArray(q.sqd) && q.sqd.length === SQD_QUESTIONS.length ? q.sqd.map((item, i) => ({ ...SQD_QUESTIONS[i], ...(item || {}), id: SQD_QUESTIONS[i].id })) : DEFAULT_QUESTIONS.sqd,
+        },
       });
     }
   }, [route, configLoaded]);
 
+  // Scroll to top when step changes (e.g. after clicking Continue)
+  useEffect(() => {
+    if (surveyStarted && !submitted) {
+      window.scrollTo(0, 0);
+    }
+  }, [step, surveyStarted, submitted]);
+
+  // Clear required-error state when user edits form or changes step
+  useEffect(() => {
+    setShowRequiredError(false);
+  }, [formState, step]);
+
+  // ----- Derived state & validation -----
   const stepLabels = useMemo(() => {
     const labels = surveyConfig.stepLabels;
     return Array.isArray(labels) && labels.length >= 5 ? labels : STEP_LABELS;
   }, [surveyConfig.stepLabels]);
   const reviewStepIndex = stepLabels.length - 1;
+
+  const effectiveQuestions = useMemo(() => {
+    const q = surveyConfig.questions;
+    if (!q || typeof q !== "object") {
+      return { step0: DEFAULT_QUESTIONS.step0, step1: DEFAULT_QUESTIONS.step1, step3: DEFAULT_QUESTIONS.step3, sqd: SQD_QUESTIONS };
+    }
+    return {
+      step0: { ...DEFAULT_QUESTIONS.step0, ...(q.step0 || {}) },
+      step1: { ...DEFAULT_QUESTIONS.step1, ...(q.step1 || {}) },
+      step3: { ...DEFAULT_QUESTIONS.step3, ...(q.step3 || {}) },
+      sqd: Array.isArray(q.sqd) && q.sqd.length === SQD_QUESTIONS.length
+        ? q.sqd.map((item, i) => ({ ...SQD_QUESTIONS[i], label: (item && item.label) ? String(item.label).trim() : SQD_QUESTIONS[i].label }))
+        : SQD_QUESTIONS,
+    };
+  }, [surveyConfig.questions]);
 
   const progress = useMemo(
     () => ((step + 1) / stepLabels.length) * 100,
@@ -363,6 +477,7 @@ function App() {
     return true;
   }, [formState, step]);
 
+  // ----- Handlers -----
   const updateField = (field, value) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
@@ -396,12 +511,11 @@ function App() {
     // Default (no backend): store locally only; do not show "Response saved" as if sent to server.
     if (!USE_FIREBASE) {
       try {
-        const key = "arta_submissions";
-        const raw = localStorage.getItem(key);
+        const raw = localStorage.getItem(LOCAL_SUBMISSIONS_KEY);
         const prev = raw ? JSON.parse(raw) : [];
         const next = Array.isArray(prev) ? prev : [];
         next.push(payload);
-        localStorage.setItem(key, JSON.stringify(next));
+        localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(next));
         setSavedLocallyOnly(true);
         return "ok";
       } catch (e) {
@@ -434,6 +548,7 @@ function App() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canMoveNext) {
+      setShowRequiredError(true);
       return;
     }
     if (step < reviewStepIndex) {
@@ -468,11 +583,11 @@ function App() {
     if (logoClickResetRef.current) clearTimeout(logoClickResetRef.current);
     setLogoClickCount((prev) => {
       const next = prev + 1;
-      if (next >= 5) {
+      if (next >= ADMIN_LOGO_CLICKS) {
         openAdmin();
         return 0;
       }
-      logoClickResetRef.current = setTimeout(() => setLogoClickCount(0), 1500);
+      logoClickResetRef.current = setTimeout(() => setLogoClickCount(0), LOGO_CLICK_RESET_MS);
       return next;
     });
   };
@@ -487,23 +602,37 @@ function App() {
     setAdminSaveNotice("");
     setAdminError("");
     const c = surveyConfig;
+    const q = c.questions && typeof c.questions === "object" ? c.questions : DEFAULT_QUESTIONS;
     setAdminForm({
       activeYear: c.activeYear ?? new Date().getFullYear(),
       ui: {
         title: c.ui?.title ?? DEFAULT_CONFIG.ui.title,
         intro: c.ui?.intro ?? DEFAULT_CONFIG.ui.intro,
       },
-      stepLabels:
-        Array.isArray(c.stepLabels) && c.stepLabels.length
-          ? [...c.stepLabels]
-          : [...STEP_LABELS],
+      stepLabels: normalizeStepLabels(c.stepLabels),
+      questions: {
+        step0: { ...DEFAULT_QUESTIONS.step0, ...(q.step0 || {}) },
+        step1: { ...DEFAULT_QUESTIONS.step1, ...(q.step1 || {}) },
+        step3: { ...DEFAULT_QUESTIONS.step3, ...(q.step3 || {}) },
+        sqd: Array.isArray(q.sqd) && q.sqd.length === SQD_QUESTIONS.length ? q.sqd.map((item, i) => ({ ...SQD_QUESTIONS[i], ...(item || {}), id: SQD_QUESTIONS[i].id })) : DEFAULT_QUESTIONS.sqd,
+      },
     });
+    setAdminSaveNotice("Loaded saved config.");
   };
 
   const saveAdminDraft = () => {
     setAdminSaveNotice("");
     setAdminError("");
     const f = adminForm;
+    const stepLabels = normalizeStepLabels(f.stepLabels);
+    const questions = f.questions && typeof f.questions === "object" ? {
+      step0: { ...DEFAULT_QUESTIONS.step0, ...(f.questions.step0 || {}) },
+      step1: { ...DEFAULT_QUESTIONS.step1, ...(f.questions.step1 || {}) },
+      step3: { ...DEFAULT_QUESTIONS.step3, ...(f.questions.step3 || {}) },
+      sqd: (Array.isArray(f.questions.sqd) && f.questions.sqd.length === SQD_QUESTIONS.length)
+        ? f.questions.sqd.map((item, i) => ({ id: SQD_QUESTIONS[i].id, label: (item && item.label) ? String(item.label).trim() : SQD_QUESTIONS[i].label }))
+        : DEFAULT_QUESTIONS.sqd,
+    } : null;
     const merged = {
       ...DEFAULT_CONFIG,
       activeYear: Number(f.activeYear) || new Date().getFullYear(),
@@ -511,14 +640,26 @@ function App() {
         title: String(f.ui.title).trim() || DEFAULT_CONFIG.ui.title,
         intro: String(f.ui.intro).trim() || DEFAULT_CONFIG.ui.intro,
       },
-      stepLabels:
-        Array.isArray(f.stepLabels) && f.stepLabels.length
-          ? f.stepLabels.map((x) => String(x).trim()).filter(Boolean)
-          : [...STEP_LABELS],
+      stepLabels,
+      questions,
     };
     setLocalSurveyConfig(merged);
     setSurveyConfig(merged);
+    setAdminForm((prev) => ({ ...prev, stepLabels, questions: questions || prev.questions }));
     setAdminSaveNotice("Saved. The survey will show your changes.");
+  };
+
+  const resetStepLabelsToDefault = () => {
+    setAdminForm((prev) => ({ ...prev, stepLabels: [...STEP_LABELS] }));
+    setAdminSaveNotice("Step labels reset to default.");
+  };
+
+  const resetQuestionsToDefault = () => {
+    setAdminForm((prev) => ({
+      ...prev,
+      questions: JSON.parse(JSON.stringify(DEFAULT_QUESTIONS)),
+    }));
+    setAdminSaveNotice("Question text reset to default.");
   };
 
   const updateAdminForm = (path, valueOrUpdater) => {
@@ -529,10 +670,45 @@ function App() {
       else if (path === "ui.title") next.ui = { ...prev.ui, title: value };
       else if (path === "ui.intro") next.ui = { ...prev.ui, intro: value };
       else if (path === "stepLabels") next.stepLabels = value;
+      else if (path.startsWith("questions.")) {
+        const [, section, key] = path.split(".");
+        if (section && key && next.questions) {
+          next.questions = { ...prev.questions };
+          if (section === "sqd" && key === "label" && typeof valueOrUpdater === "function") {
+            const upd = valueOrUpdater(prev);
+            if (upd != null && typeof upd.index === "number" && upd.label !== undefined) {
+              const sqd = [...(prev.questions.sqd || DEFAULT_QUESTIONS.sqd)];
+              sqd[upd.index] = { ...sqd[upd.index], label: String(upd.label) };
+              next.questions.sqd = sqd;
+            }
+          } else if (next.questions[section]) {
+            next.questions[section] = { ...prev.questions[section], [key]: value };
+          } else {
+            next.questions[section] = { [key]: value };
+          }
+        }
+      }
       return next;
     });
   };
 
+  const updateAdminQuestion = (section, key, value) => {
+    setAdminForm((prev) => {
+      const next = { ...prev, questions: { ...prev.questions } };
+      next.questions[section] = { ...(prev.questions[section] || {}), [key]: value };
+      return next;
+    });
+  };
+
+  const updateAdminSqdLabel = (index, label) => {
+    setAdminForm((prev) => {
+      const sqd = [...(prev.questions.sqd || DEFAULT_QUESTIONS.sqd)];
+      if (sqd[index]) sqd[index] = { ...sqd[index], label: String(label) };
+      return { ...prev, questions: { ...prev.questions, sqd } };
+    });
+  };
+
+  // ========== Admin panel UI (config: year, title, intro, step labels) ==========
   if (route === "admin") {
     return (
       <main className="survey-shell survey-shell--admin">
@@ -549,9 +725,9 @@ function App() {
             </div>
           </div>
           <h1>Survey Admin</h1>
-          <p className="admin-intro">Update the year, title, intro, and step labels below. Changes are saved to this device.</p>
-          <div className="actions">
-            <button className="secondary" type="button" onClick={openSurvey}>
+          <p className="admin-intro">Change the survey year, title, intro, step names, and question text below. Settings are saved on this device only (localStorage).</p>
+          <div className="actions admin-header-actions">
+            <button className="primary" type="button" onClick={openSurvey}>
               Back to survey
             </button>
           </div>
@@ -578,7 +754,7 @@ function App() {
                     onChange={(e) => updateAdminForm("activeYear", e.target.value)}
                     aria-label="Survey year"
                   >
-                    {Array.from({ length: 26 }, (_, i) => 2015 + i).map((y) => (
+                    {Array.from({ length: ADMIN_YEAR_COUNT }, (_, i) => ADMIN_YEAR_START + i).map((y) => (
                       <option key={y} value={y}>{y}</option>
                     ))}
                   </select>
@@ -608,40 +784,168 @@ function App() {
 
             <div className="admin-section">
               <h3 className="admin-section-title">Step labels</h3>
-              <p className="field-help">These labels appear in the progress header.</p>
+              <p className="field-help">The survey has 5 steps. Edit the names below; they appear in the progress bar (e.g. “Step 1 of 5: Client information”).</p>
               <div className="admin-row admin-row-header" aria-hidden="true">
+                <span className="admin-col-label">Step</span>
                 <span className="admin-col-label">Label</span>
-                <span className="admin-col-action" />
               </div>
-              {(adminForm.stepLabels || []).map((label, idx) => (
+              {(adminForm.stepLabels || [...STEP_LABELS]).slice(0, 5).map((label, idx) => (
                 <div key={idx} className="admin-row">
+                  <span className="admin-step-num" aria-hidden="true">{idx + 1}</span>
                   <input
                     type="text"
                     value={label}
                     onChange={(e) => {
-                      const next = [...(adminForm.stepLabels || [])];
+                      const current = (adminForm.stepLabels || [...STEP_LABELS]).slice(0, 5);
+                      const next = [...current];
                       next[idx] = e.target.value;
                       updateAdminForm("stepLabels", next);
                     }}
-                    placeholder={`Step ${idx + 1}`}
-                    aria-label={`Step label ${idx + 1}`}
+                    placeholder={STEP_LABELS[idx] || `Step ${idx + 1}`}
+                    aria-label={`Step ${idx + 1} label`}
                   />
-                  <button
-                    type="button"
-                    className="admin-btn-remove"
-                    onClick={() => updateAdminForm("stepLabels", (adminForm.stepLabels || []).filter((_, i) => i !== idx))}
-                    aria-label={`Remove step label ${idx + 1}`}
-                  >
-                    −
-                  </button>
                 </div>
               ))}
               <button
                 type="button"
-                className="secondary admin-btn-add"
-                onClick={() => updateAdminForm("stepLabels", (prev) => [...(prev.stepLabels || []), ""])}
+                className="secondary admin-btn-reset-labels"
+                onClick={resetStepLabelsToDefault}
               >
-                + Add step label
+                Reset step labels to default
+              </button>
+            </div>
+
+            <div className="admin-section">
+              <h3 className="admin-section-title">Edit questions</h3>
+              <p className="field-help">Edit the labels and help text shown on the survey. Changes apply after you save to device.</p>
+
+              <h4 className="admin-subsection-title">Step 1 – Client information</h4>
+              <div className="admin-questions-grid">
+                {["clientType", "date", "sex", "age", "region", "serviceAvailed"].map((key) => (
+                  <div key={key} className="field admin-field-question">
+                    <label htmlFor={`q-step0-${key}`}>{key === "clientType" ? "Client type" : key === "date" ? "Date" : key === "serviceAvailed" ? "Service availed" : key}</label>
+                    <input
+                      id={`q-step0-${key}`}
+                      type="text"
+                      value={(adminForm.questions?.step0 || DEFAULT_QUESTIONS.step0)[key] ?? ""}
+                      onChange={(e) => updateAdminQuestion("step0", key, e.target.value)}
+                      placeholder={(DEFAULT_QUESTIONS.step0)[key]}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <h4 className="admin-subsection-title">Step 2 – Citizen’s Charter (CC1, CC2, CC3)</h4>
+              <div className="admin-questions-grid">
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-cc1-label">CC1 label</label>
+                  <input
+                    id="q-cc1-label"
+                    type="text"
+                    value={(adminForm.questions?.step1 || DEFAULT_QUESTIONS.step1).cc1Label ?? ""}
+                    onChange={(e) => updateAdminQuestion("step1", "cc1Label", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step1.cc1Label}
+                  />
+                </div>
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-cc1-help">CC1 help</label>
+                  <input
+                    id="q-cc1-help"
+                    type="text"
+                    value={(adminForm.questions?.step1 || DEFAULT_QUESTIONS.step1).cc1Help ?? ""}
+                    onChange={(e) => updateAdminQuestion("step1", "cc1Help", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step1.cc1Help}
+                  />
+                </div>
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-cc2-label">CC2 label</label>
+                  <input
+                    id="q-cc2-label"
+                    type="text"
+                    value={(adminForm.questions?.step1 || DEFAULT_QUESTIONS.step1).cc2Label ?? ""}
+                    onChange={(e) => updateAdminQuestion("step1", "cc2Label", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step1.cc2Label}
+                  />
+                </div>
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-cc2-help">CC2 help</label>
+                  <input
+                    id="q-cc2-help"
+                    type="text"
+                    value={(adminForm.questions?.step1 || DEFAULT_QUESTIONS.step1).cc2Help ?? ""}
+                    onChange={(e) => updateAdminQuestion("step1", "cc2Help", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step1.cc2Help}
+                  />
+                </div>
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-cc3-label">CC3 label</label>
+                  <input
+                    id="q-cc3-label"
+                    type="text"
+                    value={(adminForm.questions?.step1 || DEFAULT_QUESTIONS.step1).cc3Label ?? ""}
+                    onChange={(e) => updateAdminQuestion("step1", "cc3Label", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step1.cc3Label}
+                  />
+                </div>
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-cc3-help">CC3 help</label>
+                  <input
+                    id="q-cc3-help"
+                    type="text"
+                    value={(adminForm.questions?.step1 || DEFAULT_QUESTIONS.step1).cc3Help ?? ""}
+                    onChange={(e) => updateAdminQuestion("step1", "cc3Help", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step1.cc3Help}
+                  />
+                </div>
+              </div>
+
+              <h4 className="admin-subsection-title">Step 3 – Service Quality (SQD) questions</h4>
+              <p className="field-help">Labels for SQD0–SQD8 shown on the ratings step.</p>
+              <div className="admin-sqd-list">
+                {((adminForm.questions?.sqd || DEFAULT_QUESTIONS.sqd).slice(0, 9)).map((item, i) => (
+                  <div key={item.id || i} className="admin-row admin-row-sqd">
+                    <span className="admin-sqd-num" aria-hidden="true">SQD{i}</span>
+                    <input
+                      type="text"
+                      value={item.label ?? ""}
+                      onChange={(e) => updateAdminSqdLabel(i, e.target.value)}
+                      placeholder={DEFAULT_QUESTIONS.sqd[i]?.label}
+                      aria-label={`SQD${i} label`}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <h4 className="admin-subsection-title">Step 4 – Suggestions</h4>
+              <div className="admin-questions-grid">
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-suggestions-label">Suggestions label</label>
+                  <input
+                    id="q-suggestions-label"
+                    type="text"
+                    value={(adminForm.questions?.step3 || DEFAULT_QUESTIONS.step3).suggestionsLabel ?? ""}
+                    onChange={(e) => updateAdminQuestion("step3", "suggestionsLabel", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step3.suggestionsLabel}
+                  />
+                </div>
+                <div className="field admin-field-question admin-field-question--full">
+                  <label htmlFor="q-email-label">Email label</label>
+                  <input
+                    id="q-email-label"
+                    type="text"
+                    value={(adminForm.questions?.step3 || DEFAULT_QUESTIONS.step3).emailLabel ?? ""}
+                    onChange={(e) => updateAdminQuestion("step3", "emailLabel", e.target.value)}
+                    placeholder={DEFAULT_QUESTIONS.step3.emailLabel}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="secondary admin-btn-reset-questions"
+                onClick={resetQuestionsToDefault}
+              >
+                Reset question text to default
               </button>
             </div>
           </div>
@@ -658,6 +962,7 @@ function App() {
     );
   }
 
+  // ========== Survey UI (header, landing | form steps | thank-you) ==========
   return (
     <main className={`survey-shell${!surveyStarted ? " survey-shell--landing" : ""}`}>
       <header className="survey-header">
@@ -697,6 +1002,7 @@ function App() {
       </header>
 
       {!surveyStarted ? (
+        // ----- Landing (Start survey) -----
         <section className="survey-landing" aria-labelledby="landing-heading">
           <div className="survey-landing-wave" aria-hidden="true">
             <svg viewBox="0 0 400 24" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
@@ -721,6 +1027,7 @@ function App() {
           </div>
         </section>
       ) : submitted ? (
+        // ----- Thank-you -----
         <section className="thank-you" aria-live="polite">
           <h2>Thanks for your feedback!</h2>
           {saveSuccess && !savedLocallyOnly && (
@@ -739,19 +1046,32 @@ function App() {
           </div>
         </section>
       ) : (
-        <form onSubmit={handleSubmit} className="survey-grid" aria-label="Survey form">
+        // ----- Form (steps 0–4) -----
+        <form onSubmit={handleSubmit} className={`survey-grid${showRequiredError ? " survey-grid--required-error" : ""}`} aria-label="Survey form">
           {!configLoaded && (
             <p className="field-help" role="status">
               Loading questions...
             </p>
           )}
+          {showRequiredError && (
+            <div className="required-error-toast" role="alert">
+              Please fill in all required fields.
+            </div>
+          )}
           {step === 0 && (
+            /* Step 0: Client information */
             <>
+              {(() => {
+                const clientTypeEmpty = !String(formState.clientType || "").trim();
+                const showClientTypeError = showRequiredError && clientTypeEmpty;
+                return (
               <QuestionRow
-                label="Client type"
+                label={effectiveQuestions.step0.clientType}
                 help="Choose one option."
+                required
+                showError={showClientTypeError}
               >
-                <fieldset className="field">
+                <fieldset className={`field${showClientTypeError ? " field--required" : ""}`}>
                   <legend className="sr-only" id="client-type-legend">
                     Client type
                   </legend>
@@ -774,9 +1094,15 @@ function App() {
                   </div>
                 </fieldset>
               </QuestionRow>
+                );
+              })()}
 
-              <QuestionRow label="Date" help="Required." htmlFor="date">
-                <div className="field">
+              {(() => {
+                const dateEmpty = !String(formState.date || "").trim();
+                const showDateError = showRequiredError && dateEmpty;
+                return (
+              <QuestionRow label={effectiveQuestions.step0.date} help="Required." htmlFor="date" required showError={showDateError}>
+                <div className={`field${showDateError ? " field--required" : ""}`}>
                   <input
                     id="date"
                     type="date"
@@ -792,8 +1118,10 @@ function App() {
                   />
                 </div>
               </QuestionRow>
+                );
+              })()}
 
-              <QuestionRow label="Sex" help="Optional. Choose one." >
+              <QuestionRow label={effectiveQuestions.step0.sex} help="Optional. Choose one." >
                 <fieldset className="field">
                   <legend className="sr-only" id="sex-legend">Sex</legend>
                   <div className="options" role="radiogroup" aria-labelledby="sex-legend">
@@ -816,7 +1144,7 @@ function App() {
                 </fieldset>
               </QuestionRow>
 
-              <QuestionRow label="Age" help="Optional." htmlFor="age">
+              <QuestionRow label={effectiveQuestions.step0.age} help="Optional." htmlFor="age">
                 <div className="field">
                   <input
                     id="age"
@@ -831,7 +1159,7 @@ function App() {
                 </div>
               </QuestionRow>
 
-              <QuestionRow label="Region of residence" help="Optional." htmlFor="region">
+              <QuestionRow label={effectiveQuestions.step0.region} help="Optional." htmlFor="region">
                 <div className="field">
                   <input
                     id="region"
@@ -843,8 +1171,12 @@ function App() {
                 </div>
               </QuestionRow>
 
-              <QuestionRow label="Service availed" help="Required." htmlFor="serviceAvailed">
-                <div className="field">
+              {(() => {
+                const serviceAvailedEmpty = !String(formState.serviceAvailed || "").trim();
+                const showServiceAvailedError = showRequiredError && serviceAvailedEmpty;
+                return (
+              <QuestionRow label={effectiveQuestions.step0.serviceAvailed} help="Required." htmlFor="serviceAvailed" required showError={showServiceAvailedError}>
+                <div className={`field${showServiceAvailedError ? " field--required" : ""}`}>
                   <input
                     id="serviceAvailed"
                     type="text"
@@ -855,16 +1187,20 @@ function App() {
                   />
                 </div>
               </QuestionRow>
+                );
+              })()}
             </>
           )}
 
           {step === 1 && (
             <>
               <QuestionRow
-                label="CC1: Awareness of the Citizen’s Charter (CC)"
-                help="Which of the following best describes your awareness of a CC?"
+                label={effectiveQuestions.step1.cc1Label}
+                help={effectiveQuestions.step1.cc1Help}
+                required
+                showError={showRequiredError && !String(formState.cc1 || "").trim()}
               >
-                <fieldset className="field">
+                <fieldset className={`field${showRequiredError && !String(formState.cc1 || "").trim() ? " field--required" : ""}`}>
                   <legend className="sr-only" id="cc1-legend">CC1</legend>
                   <div
                     className="options options--cc1"
@@ -892,11 +1228,19 @@ function App() {
                 </fieldset>
               </QuestionRow>
 
+              {(() => {
+                const cc2Required = formState.cc1 !== "4";
+                const cc2Empty = !String(formState.cc2 || "").trim();
+                const showCc2Error = showRequiredError && cc2Required && cc2Empty;
+                return (
+                  <>
               <QuestionRow
-                label="CC2: Visibility of this office’s CC"
-                help="If aware of CC (answered 1–3 in CC1), would you say that the CC of this office was…?"
+                label={effectiveQuestions.step1.cc2Label}
+                help={effectiveQuestions.step1.cc2Help}
+                required={cc2Required}
+                showError={showCc2Error}
               >
-                <fieldset className="field">
+                <fieldset className={`field${showCc2Error ? " field--required" : ""}`}>
                   <legend className="sr-only" id="cc2-legend">CC2</legend>
                   <div className="options options--cc2" role="radiogroup" aria-labelledby="cc2-legend" aria-disabled={formState.cc1 === "4"}>
                     {CC2_OPTIONS.map((opt) => (
@@ -919,11 +1263,18 @@ function App() {
                 </fieldset>
               </QuestionRow>
 
+              {(() => {
+                const cc3Required = formState.cc1 !== "4";
+                const cc3Empty = !String(formState.cc3 || "").trim();
+                const showCc3Error = showRequiredError && cc3Required && cc3Empty;
+                return (
               <QuestionRow
-                label="CC3: Helpfulness of the CC"
-                help="If aware of CC (answered 1–3 in CC1), how much did the CC help you in your transaction?"
+                label={effectiveQuestions.step1.cc3Label}
+                help={effectiveQuestions.step1.cc3Help}
+                required={cc3Required}
+                showError={showCc3Error}
               >
-                <fieldset className="field">
+                <fieldset className={`field${showCc3Error ? " field--required" : ""}`}>
                   <legend className="sr-only" id="cc3-legend">CC3</legend>
                   <div className="options options--cc3" role="radiogroup" aria-labelledby="cc3-legend" aria-disabled={formState.cc1 === "4"}>
                     {CC3_OPTIONS.map((opt) => (
@@ -945,10 +1296,16 @@ function App() {
                   </div>
                 </fieldset>
               </QuestionRow>
+                );
+              })()}
+                  </>
+                );
+              })()}
             </>
           )}
 
           {step === 2 && (
+            /* Step 2: Service Quality (SQD0–SQD8) */
             <>
               <section className="likert-block" aria-label="Service Quality (SQD) questions">
                 <div className="likert-header" aria-hidden="true">
@@ -960,14 +1317,20 @@ function App() {
                   ))}
                 </div>
 
-                {SQD_QUESTIONS.map((q) => (
+                {effectiveQuestions.sqd.map((q) => {
+                  const sqdValue = (formState.sqd || {})[q.id];
+                  const sqdEmpty = !String(sqdValue || "").trim();
+                  const showSqdError = showRequiredError && sqdEmpty;
+                  return (
                   <QuestionRow
                     key={q.id}
                     className="question-row--sqd"
                     label={q.label}
                     help={undefined}
+                    required
+                    showError={showSqdError}
                   >
-                    <fieldset className="field">
+                    <fieldset className={`field${showSqdError ? " field--required" : ""}`}>
                       <legend className="sr-only">{q.label}</legend>
                       <div className="scale scale-6" aria-label={`${q.label} rating`} role="radiogroup">
                         {LIKERT_OPTIONS.map((opt) => (
@@ -987,15 +1350,17 @@ function App() {
                       </div>
                     </fieldset>
                   </QuestionRow>
-                ))}
+                  );
+                })}
               </section>
             </>
           )}
 
           {step === 3 && (
+            /* Step 3: Suggestions & email */
             <>
               <QuestionRow
-                label="Suggestions on how we can further improve our services"
+                label={effectiveQuestions.step3.suggestionsLabel}
                 help="Optional."
                 htmlFor="suggestions"
               >
@@ -1009,7 +1374,7 @@ function App() {
                 </div>
               </QuestionRow>
 
-              <QuestionRow label="Email address" help="Optional." htmlFor="email">
+              <QuestionRow label={effectiveQuestions.step3.emailLabel} help="Optional." htmlFor="email">
                 <div className="field">
                   <input
                     id="email"
@@ -1025,6 +1390,7 @@ function App() {
           )}
 
           {step === reviewStepIndex && (
+            /* Step 4: Review & submit */
             <>
               <section className="summary">
                 <h2>Review your answers</h2>
@@ -1049,7 +1415,7 @@ function App() {
                   <div className="summary-section summary-section--wide">
                     <h3>Service Quality (SQD)</h3>
                     <div className="summary-sqd">
-                      {SQD_QUESTIONS.map((q) => (
+                      {effectiveQuestions.sqd.map((q) => (
                         <div key={q.id} className="summary-sqd-row">
                           <span className="summary-sqd-q">{q.label}</span>
                           <strong className="summary-sqd-a">{LIKERT_OPTIONS.find((x) => x.id === (formState.sqd || {})[q.id])?.label || "—"}</strong>
@@ -1068,6 +1434,7 @@ function App() {
             </>
           )}
 
+          {/* Form actions: Back, Continue / Submit */}
           {saveError && (
             <div className="survey-error-popup" role="alert" aria-live="assertive">
               <span className="survey-error-popup-icon" aria-hidden>!</span>
@@ -1086,7 +1453,7 @@ function App() {
             <button
               className="primary"
               type="submit"
-              disabled={!canMoveNext || isSaving}
+              disabled={isSaving}
             >
               {step === stepLabels.length - 1
                 ? isSaving
@@ -1101,5 +1468,6 @@ function App() {
   );
 }
 
+// ========== Mount ==========
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
