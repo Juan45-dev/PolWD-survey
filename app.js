@@ -2,14 +2,14 @@
  * PWD Survey – ARTA Client Satisfaction (online version).
  *
  * Single-page app: landing → 5-step form (client info, Citizen’s Charter, SQD, suggestions, review) → thank-you.
- * Config (title, intro, step labels) is stored in localStorage; optional Firebase for saving responses.
+ * Config (title, intro, step labels) is stored in localStorage; responses are saved locally only.
  * Admin: click the header logo 5 times quickly to open the config panel (#/admin).
  *
  * NAVIGATION (Ctrl+F / Cmd+F to jump):
  *   Constants          – timing, storage keys, admin year range
  *   Survey question data – STEP_LABELS, CLIENT_TYPES, CC options, LIKERT, SQD_QUESTIONS, DEFAULT_CONFIG
  *   Config & storage   – getLocalSurveyConfig, setLocalSurveyConfig
- *   Firebase           – FIREBASE_CONFIG, hashString, createSubmissionId, ensureFirebase, getCallable, getRoute
+ *   Routing & IDs      – getRoute, createSubmissionId, hashString
  *   Default form state – DEFAULT_STATE
  *   QuestionRow        – reusable question row component
  *   App() state        – route, admin, survey, form, logo click
@@ -158,7 +158,6 @@ const DEFAULT_CONFIG = {
 };
 
 // ========== Config & storage ==========
-const USE_FIREBASE = false;
 const CONFIG_STORAGE_KEY = "pwd_survey_config";
 
 function getLocalSurveyConfig() {
@@ -204,16 +203,7 @@ function setLocalSurveyConfig(config) {
   localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
 }
 
-// ========== Firebase (replace with your project config from Firebase Console) ==========
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCDTjJaL4CY79tEG8ue3v0N_UzfGj78Vz4",
-  authDomain: "polwd-survey.firebaseapp.com",
-  projectId: "polwd-survey",
-  storageBucket: "polwd-survey.firebasestorage.app",
-  messagingSenderId: "768034495490",
-  appId: "1:768034495490:web:35effc3830c71210ce5b1b"
-};
-
+// ========== Routing & submission IDs (local only) ==========
 const hashString = (value) => {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -223,26 +213,11 @@ const hashString = (value) => {
   return `sub_${Math.abs(hash)}`;
 };
 
-// ========== Firebase helpers (only used when USE_FIREBASE is true) ==========
 const createSubmissionId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `sub_${crypto.randomUUID()}`;
   }
   return hashString(`${Date.now()}_${Math.random()}`);
-};
-
-const ensureFirebase = () => {
-  if (typeof firebase === "undefined") {
-    throw new Error("Firebase SDK not loaded");
-  }
-  if (!firebase.apps.length) {
-    firebase.initializeApp(FIREBASE_CONFIG);
-  }
-};
-
-const getCallable = (name) => {
-  ensureFirebase();
-  return firebase.functions().httpsCallable(name);
 };
 
 const getRoute = () => {
@@ -460,6 +435,9 @@ function App() {
       return (
         String(formState.clientType || "").trim().length > 0 &&
         String(formState.date || "").trim().length > 0 &&
+        String(formState.sex || "").trim().length > 0 &&
+        String(formState.age || "").trim().length > 0 &&
+        String(formState.region || "").trim().length > 0 &&
         String(formState.serviceAvailed || "").trim().length > 0
       );
     }
@@ -508,37 +486,16 @@ function App() {
       submittedAt: new Date().toISOString(),
     };
 
-    // Default (no backend): store locally only; do not show "Response saved" as if sent to server.
-    if (!USE_FIREBASE) {
-      try {
-        const raw = localStorage.getItem(LOCAL_SUBMISSIONS_KEY);
-        const prev = raw ? JSON.parse(raw) : [];
-        const next = Array.isArray(prev) ? prev : [];
-        next.push(payload);
-        localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(next));
-        setSavedLocallyOnly(true);
-        return "ok";
-      } catch (e) {
-        setSaveError("We couldn't save your response on this device. Please try again.");
-        return "error";
-      } finally {
-        setIsSaving(false);
-      }
-    }
-
-    if (!FIREBASE_CONFIG.projectId || FIREBASE_CONFIG.projectId === "YOUR_PROJECT_ID") {
-      setSaveError("Firebase is not configured. Set FIREBASE_CONFIG in app.js.");
-      setIsSaving(false);
-      return "error";
-    }
-
     try {
-      const submitSurvey = getCallable("submitSurvey");
-      await submitSurvey(payload);
-      setSaveSuccess(true);
+      const raw = localStorage.getItem(LOCAL_SUBMISSIONS_KEY);
+      const prev = raw ? JSON.parse(raw) : [];
+      const next = Array.isArray(prev) ? prev : [];
+      next.push(payload);
+      localStorage.setItem(LOCAL_SUBMISSIONS_KEY, JSON.stringify(next));
+      setSavedLocallyOnly(true);
       return "ok";
-    } catch (error) {
-      setSaveError("We couldn't save your response. Please try again.");
+    } catch (e) {
+      setSaveError("We couldn't save your response on this device. Please try again.");
       return "error";
     } finally {
       setIsSaving(false);
@@ -1121,8 +1078,12 @@ function App() {
                 );
               })()}
 
-              <QuestionRow label={effectiveQuestions.step0.sex} help="Optional. Choose one." >
-                <fieldset className="field">
+              {(() => {
+                const sexEmpty = !String(formState.sex || "").trim();
+                const showSexError = showRequiredError && sexEmpty;
+                return (
+              <QuestionRow label={effectiveQuestions.step0.sex} help="Required. Choose one." required showError={showSexError}>
+                <fieldset className={`field${showSexError ? " field--required" : ""}`}>
                   <legend className="sr-only" id="sex-legend">Sex</legend>
                   <div className="options" role="radiogroup" aria-labelledby="sex-legend">
                     {SEX_OPTIONS.map((opt) => (
@@ -1143,9 +1104,15 @@ function App() {
                   </div>
                 </fieldset>
               </QuestionRow>
+                );
+              })()}
 
-              <QuestionRow label={effectiveQuestions.step0.age} help="Optional." htmlFor="age">
-                <div className="field">
+              {(() => {
+                const ageEmpty = !String(formState.age || "").trim();
+                const showAgeError = showRequiredError && ageEmpty;
+                return (
+              <QuestionRow label={effectiveQuestions.step0.age} help="Required." htmlFor="age" required showError={showAgeError}>
+                <div className={`field${showAgeError ? " field--required" : ""}`}>
                   <input
                     id="age"
                     type="number"
@@ -1158,9 +1125,15 @@ function App() {
                   />
                 </div>
               </QuestionRow>
+                );
+              })()}
 
-              <QuestionRow label={effectiveQuestions.step0.region} help="Optional." htmlFor="region">
-                <div className="field">
+              {(() => {
+                const regionEmpty = !String(formState.region || "").trim();
+                const showRegionError = showRequiredError && regionEmpty;
+                return (
+              <QuestionRow label={effectiveQuestions.step0.region} help="Required." htmlFor="region" required showError={showRegionError}>
+                <div className={`field${showRegionError ? " field--required" : ""}`}>
                   <input
                     id="region"
                     type="text"
@@ -1170,6 +1143,8 @@ function App() {
                   />
                 </div>
               </QuestionRow>
+                );
+              })()}
 
               {(() => {
                 const serviceAvailedEmpty = !String(formState.serviceAvailed || "").trim();
