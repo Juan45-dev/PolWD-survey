@@ -158,7 +158,7 @@ body::before {
 .loader-logo {
   width: 120px;
   height: 120px;
-  border-radius: 50%;
+  border-radius: 12px;
   object-fit: cover;
   border: 2px solid rgba(56, 189, 248, 0.6);
   animation: logoReveal 2.6s ease-in-out infinite;
@@ -296,15 +296,15 @@ body::before {
   border: none;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: 12px;
   line-height: 0;
 }
 .brand-logo {
   width: 64px;
   height: 64px;
-  border-radius: 50%;
+  border-radius: 12px;
   object-fit: cover;
-  border: 2px solid rgba(148, 163, 184, 0.4);
+  border: 2px solid rgba(56, 189, 248, 0.5);
   background: #0b223d;
 }
 
@@ -534,6 +534,31 @@ fieldset.field > legend {
 .field textarea.invalid {
   border-color: #ef4444;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+/* Read-only fields (prefilled from URL endpoint) */
+.field--readonly input,
+.field--readonly span {
+  cursor: default;
+  background: #e2e8f0;
+  color: #475569;
+}
+.field--readonly input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  pointer-events: none;
+}
+.field--readonly input[type="number"]::-webkit-outer-spin-button,
+.field--readonly input[type="number"]::-webkit-inner-spin-button {
+  opacity: 0;
+  pointer-events: none;
+}
+.field--readonly span {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 2px solid rgba(148, 163, 184, 0.4);
+  background: #e2e8f0;
+  font-size: 16px;
 }
 
 .field-help {

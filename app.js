@@ -225,9 +225,29 @@ const getRoute = () => {
   return hash.startsWith("#/admin") ? "admin" : "survey";
 };
 
+// Parse URL query params (?date=...&sex=...&age=...&region=...&service=...) into partial form state
+function getInitialStateFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const partial = {};
+  const date = params.get("date");
+  if (date != null && String(date).trim()) partial.date = String(date).trim();
+  const sexRaw = params.get("sex");
+  if (sexRaw != null && String(sexRaw).trim()) {
+    const s = String(sexRaw).trim().toLowerCase();
+    if (s === "male" || s === "female") partial.sex = s;
+  }
+  const age = params.get("age");
+  if (age != null && String(age).trim()) partial.age = String(age).trim();
+  const region = params.get("region");
+  if (region != null && String(region).trim()) partial.region = String(region).trim();
+  const service = params.get("service");
+  if (service != null && String(service).trim()) partial.serviceAvailed = String(service).trim();
+  return partial;
+}
+
 // ========== Default form state (one object per submission) ==========
 const DEFAULT_STATE = {
-  clientType: "",
+  clientType: "government",
   date: "",
   sex: "",
   age: "",
@@ -310,6 +330,7 @@ function App() {
   const [logoClickCount, setLogoClickCount] = useState(0);
   const logoClickResetRef = React.useRef(null);
   const [showRequiredError, setShowRequiredError] = useState(false);
+  const [urlPrefilledKeys, setUrlPrefilledKeys] = useState([]);
 
   // ----- Effects -----
   useEffect(() => {
@@ -338,6 +359,15 @@ function App() {
       const config = getLocalSurveyConfig();
       setSurveyConfig(config);
     }
+  }, [route, configLoaded]);
+
+  // Prefill form from URL params once when survey route is ready
+  useEffect(() => {
+    if (route !== "survey" || !configLoaded) return;
+    const urlState = getInitialStateFromUrl();
+    if (Object.keys(urlState).length === 0) return;
+    setFormState((prev) => ({ ...prev, ...urlState }));
+    setUrlPrefilledKeys(Object.keys(urlState));
   }, [route, configLoaded]);
 
   useEffect(() => {
@@ -524,7 +554,9 @@ function App() {
 
   const resetSurvey = () => {
     setSurveyStarted(false);
-    setFormState(DEFAULT_STATE);
+    const urlState = getInitialStateFromUrl();
+    setFormState({ ...DEFAULT_STATE, ...urlState });
+    setUrlPrefilledKeys(Object.keys(urlState));
     setStep(0);
     setSubmitted(false);
     setSaveSuccess(false);
@@ -1057,21 +1089,24 @@ function App() {
               {(() => {
                 const dateEmpty = !String(formState.date || "").trim();
                 const showDateError = showRequiredError && dateEmpty;
+                const dateReadOnly = urlPrefilledKeys.includes("date");
                 return (
               <QuestionRow label={effectiveQuestions.step0.date} help="Required." htmlFor="date" required showError={showDateError}>
-                <div className={`field${showDateError ? " field--required" : ""}`}>
+                <div className={`field${showDateError ? " field--required" : ""}${dateReadOnly ? " field--readonly" : ""}`}>
                   <input
                     id="date"
                     type="date"
                     value={formState.date}
                     onChange={(e) => updateField("date", e.target.value)}
-                    onFocus={(e) => {
+                    onFocus={dateReadOnly ? undefined : (e) => {
                       if (!formState.date) {
                         const today = new Date().toISOString().slice(0, 10);
                         updateField("date", today);
                       }
                     }}
                     required
+                    readOnly={dateReadOnly}
+                    aria-readonly={dateReadOnly}
                   />
                 </div>
               </QuestionRow>
@@ -1081,8 +1116,15 @@ function App() {
               {(() => {
                 const sexEmpty = !String(formState.sex || "").trim();
                 const showSexError = showRequiredError && sexEmpty;
+                const sexReadOnly = urlPrefilledKeys.includes("sex");
+                const sexLabel = SEX_OPTIONS.find((o) => o.id === formState.sex)?.label || formState.sex || "—";
                 return (
               <QuestionRow label={effectiveQuestions.step0.sex} help="Required. Choose one." required showError={showSexError}>
+                {sexReadOnly ? (
+                  <div className="field field--readonly">
+                    <span id="sex-readonly" aria-readonly="true">{sexLabel}</span>
+                  </div>
+                ) : (
                 <fieldset className={`field${showSexError ? " field--required" : ""}`}>
                   <legend className="sr-only" id="sex-legend">Sex</legend>
                   <div className="options" role="radiogroup" aria-labelledby="sex-legend">
@@ -1103,6 +1145,7 @@ function App() {
                     ))}
                   </div>
                 </fieldset>
+                )}
               </QuestionRow>
                 );
               })()}
@@ -1110,9 +1153,10 @@ function App() {
               {(() => {
                 const ageEmpty = !String(formState.age || "").trim();
                 const showAgeError = showRequiredError && ageEmpty;
+                const ageReadOnly = urlPrefilledKeys.includes("age");
                 return (
               <QuestionRow label={effectiveQuestions.step0.age} help="Required." htmlFor="age" required showError={showAgeError}>
-                <div className={`field${showAgeError ? " field--required" : ""}`}>
+                <div className={`field${showAgeError ? " field--required" : ""}${ageReadOnly ? " field--readonly" : ""}`}>
                   <input
                     id="age"
                     type="number"
@@ -1122,6 +1166,8 @@ function App() {
                     placeholder="Age"
                     value={formState.age}
                     onChange={(e) => updateField("age", e.target.value)}
+                    readOnly={ageReadOnly}
+                    aria-readonly={ageReadOnly}
                   />
                 </div>
               </QuestionRow>
@@ -1131,15 +1177,18 @@ function App() {
               {(() => {
                 const regionEmpty = !String(formState.region || "").trim();
                 const showRegionError = showRequiredError && regionEmpty;
+                const regionReadOnly = urlPrefilledKeys.includes("region");
                 return (
               <QuestionRow label={effectiveQuestions.step0.region} help="Required." htmlFor="region" required showError={showRegionError}>
-                <div className={`field${showRegionError ? " field--required" : ""}`}>
+                <div className={`field${showRegionError ? " field--required" : ""}${regionReadOnly ? " field--readonly" : ""}`}>
                   <input
                     id="region"
                     type="text"
                     placeholder="Region"
                     value={formState.region}
                     onChange={(e) => updateField("region", e.target.value)}
+                    readOnly={regionReadOnly}
+                    aria-readonly={regionReadOnly}
                   />
                 </div>
               </QuestionRow>
