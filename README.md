@@ -1,6 +1,24 @@
 # Polomolok Water District Survey
 
-A static, single-page survey for **ARTA-style Client Satisfaction** (government office feedback). It runs in the browser with no backend required; optional Firebase can store responses in the cloud.
+A static, single-page survey for **ARTA-style Client Satisfaction** (government office feedback). It runs in the browser (no build step required) and can optionally save responses to a backend.
+
+## Technology Stack
+
+### Frontend
+- **React 18** (UMD build, no build step required)
+- **Vanilla CSS** with responsive design
+- **Google Fonts** (Plus Jakarta Sans)
+
+### Data Storage
+- **Browser localStorage** for configurations
+- **Browser localStorage** for survey responses
+- **URL parameters** for external data injection
+
+### Architecture
+- Single-page application (SPA)
+- Hash-based routing (#/ for survey, #/admin for admin)
+- 5-step ARTA-compliant survey flow
+- Offline-capable with local storage backup
 
 ## What’s in the repo
 
@@ -11,8 +29,7 @@ A static, single-page survey for **ARTA-style Client Satisfaction** (government 
 | `styles.css`    | Layout, form styles, admin panel, animations, responsive rules. |
 | `BG animation/`| Images used for the background carousel. |
 | `pwd-logo.jpg`  | Logo in header and loader. |
-| `functions/`    | Optional Firebase Cloud Functions: `submitSurvey`, `getSurveyConfig`, admin helpers. |
-| `firebase.json`, `firestore.rules` | Firebase project config and Firestore security. |
+| `backend/`      | **Node/Express API + MongoDB** for saving responses. |
 
 ## Survey flow (5 steps)
 
@@ -35,18 +52,17 @@ No server is required for config; it’s all local.
 
 Open `index.html` in a browser, or run a static server (e.g. `npx serve .`). The survey and admin work without Firebase.
 
-## Firebase (optional)
+## Backend (MongoDB)
 
-To save responses to Firestore:
+To save responses to MongoDB:
 
-1. Create a project in [Firebase Console](https://console.firebase.google.com/), enable **Firestore**.
-2. Deploy rules and functions:  
-   `firebase deploy --only firestore:rules`  
-   then `cd functions && npm install && cd .. && firebase deploy --only functions`
-3. In the Console, add a **Web app** and copy the `firebaseConfig` object.
-4. In `app.js`, set `FIREBASE_CONFIG` to that object and `USE_FIREBASE = true`.
+1. Create a `.env` file at `backend/.env` (copy `backend/.env.example`).
+2. Set `MONGODB_URI` (example: `mongodb://127.0.0.1:27017`) and `MONGODB_DB` (example: `pwd_survey`).
+3. Install and run the backend:
+   - `npm install`
+   - `npm run dev`
 
-Responses are stored in the `responses` collection (one document per submission, ID = `submissionId`). Callable functions handle CORS; no extra proxy is needed.
+Responses are stored in MongoDB collection `responses` (one document per submission, keyed by `submissionId` inside the document).
 
 ## GitHub Pages
 
