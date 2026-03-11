@@ -4,6 +4,10 @@ functions/node_modules/
 firebase-debug*.log
 firebase-debug*.log.*
 
+# Backend
+backend/node_modules/
+backend/.env
+
 # Local
 *.local
 .env

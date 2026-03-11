@@ -2,7 +2,7 @@
  * PWD Survey – ARTA Client Satisfaction (online version).
  *
  * Single-page app: landing → 5-step form (client info, Citizen’s Charter, SQD, suggestions, review) → thank-you.
- * Config (title, intro, step labels) is stored in localStorage; responses are saved locally only.
+ * Config (title, intro, step labels) is stored in localStorage; responses are saved to the backend (optional) with a localStorage fallback.
  * Admin: click the header logo 5 times quickly to open the config panel (#/admin).
  *
  * NAVIGATION (Ctrl+F / Cmd+F to jump):
@@ -30,6 +30,16 @@ const SAVE_ERROR_DISMISS_MS = 5000;
 const LOCAL_SUBMISSIONS_KEY = "arta_submissions";
 const ADMIN_YEAR_START = 2015;
 const ADMIN_YEAR_COUNT = 26;
+
+// ========== Backend (MongoDB via API) ==========
+const USE_BACKEND = true;
+const BACKEND_BASE_URL = (() => {
+  if (typeof window === "undefined") return "";
+  if (window.__PWD_BACKEND_BASE_URL) return window.__PWD_BACKEND_BASE_URL;
+  // Default to the backend port. If you proxy the API through the same origin,
+  // set window.__PWD_BACKEND_BASE_URL before this script runs.
+  return "http://127.0.0.1:5175";
+})();
 
 // ========== Survey question data (ARTA 2025) ==========
 const STEP_LABELS = [
@@ -331,6 +341,7 @@ function App() {
   const logoClickResetRef = React.useRef(null);
   const [showRequiredError, setShowRequiredError] = useState(false);
   const [urlPrefilledKeys, setUrlPrefilledKeys] = useState([]);
+  const step0Locked = urlPrefilledKeys.length > 0;
 
   // ----- Effects -----
   useEffect(() => {
@@ -517,6 +528,19 @@ function App() {
     };
 
     try {
+      if (USE_BACKEND) {
+        const resp = await fetch(`${BACKEND_BASE_URL}/api/responses`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (resp.ok) {
+          setSaveSuccess(true);
+          return "ok";
+        }
+      }
+
       const raw = localStorage.getItem(LOCAL_SUBMISSIONS_KEY);
       const prev = raw ? JSON.parse(raw) : [];
       const next = Array.isArray(prev) ? prev : [];
@@ -1053,6 +1077,10 @@ function App() {
               {(() => {
                 const clientTypeEmpty = !String(formState.clientType || "").trim();
                 const showClientTypeError = showRequiredError && clientTypeEmpty;
+                const clientTypeLabel =
+                  CLIENT_TYPES.find((x) => x.id === formState.clientType)?.label ||
+                  formState.clientType ||
+                  "—";
                 return (
               <QuestionRow
                 label={effectiveQuestions.step0.clientType}
@@ -1060,6 +1088,11 @@ function App() {
                 required
                 showError={showClientTypeError}
               >
+                {step0Locked ? (
+                  <div className="field field--readonly">
+                    <span aria-readonly="true">{clientTypeLabel}</span>
+                  </div>
+                ) : (
                 <fieldset className={`field${showClientTypeError ? " field--required" : ""}`}>
                   <legend className="sr-only" id="client-type-legend">
                     Client type
@@ -1082,6 +1115,7 @@ function App() {
                     ))}
                   </div>
                 </fieldset>
+                )}
               </QuestionRow>
                 );
               })()}
@@ -1089,7 +1123,7 @@ function App() {
               {(() => {
                 const dateEmpty = !String(formState.date || "").trim();
                 const showDateError = showRequiredError && dateEmpty;
-                const dateReadOnly = urlPrefilledKeys.includes("date");
+                const dateReadOnly = step0Locked;
                 return (
               <QuestionRow label={effectiveQuestions.step0.date} help="Required." htmlFor="date" required showError={showDateError}>
                 <div className={`field${showDateError ? " field--required" : ""}${dateReadOnly ? " field--readonly" : ""}`}>
@@ -1116,7 +1150,7 @@ function App() {
               {(() => {
                 const sexEmpty = !String(formState.sex || "").trim();
                 const showSexError = showRequiredError && sexEmpty;
-                const sexReadOnly = urlPrefilledKeys.includes("sex");
+                const sexReadOnly = step0Locked;
                 const sexLabel = SEX_OPTIONS.find((o) => o.id === formState.sex)?.label || formState.sex || "—";
                 return (
               <QuestionRow label={effectiveQuestions.step0.sex} help="Required. Choose one." required showError={showSexError}>
@@ -1153,7 +1187,7 @@ function App() {
               {(() => {
                 const ageEmpty = !String(formState.age || "").trim();
                 const showAgeError = showRequiredError && ageEmpty;
-                const ageReadOnly = urlPrefilledKeys.includes("age");
+                const ageReadOnly = step0Locked;
                 return (
               <QuestionRow label={effectiveQuestions.step0.age} help="Required." htmlFor="age" required showError={showAgeError}>
                 <div className={`field${showAgeError ? " field--required" : ""}${ageReadOnly ? " field--readonly" : ""}`}>
@@ -1177,7 +1211,7 @@ function App() {
               {(() => {
                 const regionEmpty = !String(formState.region || "").trim();
                 const showRegionError = showRequiredError && regionEmpty;
-                const regionReadOnly = urlPrefilledKeys.includes("region");
+                const regionReadOnly = step0Locked;
                 return (
               <QuestionRow label={effectiveQuestions.step0.region} help="Required." htmlFor="region" required showError={showRegionError}>
                 <div className={`field${showRegionError ? " field--required" : ""}${regionReadOnly ? " field--readonly" : ""}`}>
@@ -1198,9 +1232,10 @@ function App() {
               {(() => {
                 const serviceAvailedEmpty = !String(formState.serviceAvailed || "").trim();
                 const showServiceAvailedError = showRequiredError && serviceAvailedEmpty;
+                const serviceReadOnly = step0Locked;
                 return (
               <QuestionRow label={effectiveQuestions.step0.serviceAvailed} help="Required." htmlFor="serviceAvailed" required showError={showServiceAvailedError}>
-                <div className={`field${showServiceAvailedError ? " field--required" : ""}`}>
+                <div className={`field${showServiceAvailedError ? " field--required" : ""}${serviceReadOnly ? " field--readonly" : ""}`}>
                   <input
                     id="serviceAvailed"
                     type="text"
@@ -1208,6 +1243,8 @@ function App() {
                     value={formState.serviceAvailed}
                     onChange={(e) => updateField("serviceAvailed", e.target.value)}
                     required
+                    readOnly={serviceReadOnly}
+                    aria-readonly={serviceReadOnly}
                   />
                 </div>
               </QuestionRow>
