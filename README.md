@@ -90,6 +90,16 @@ By default, the frontend posts to `http://127.0.0.1:5175`. If you later proxy th
 - `GET /api/health` – verifies DB connectivity and returns basic status
 - `POST /api/responses` – inserts the posted JSON document into the `responses` collection (requires `submissionId`)
 
+### Admin endpoints (pull responses)
+
+These endpoints are intended for reporting/exports (your boss “pulling directly”).
+
+1. Set `ADMIN_API_KEY` in `backend/.env`
+2. Call the endpoints with header `x-api-key: <ADMIN_API_KEY>`
+
+- `GET /api/admin/responses?limit=100&skip=0&from=2026-03-01T00:00:00.000Z&to=2026-03-31T23:59:59.999Z`
+- `GET /api/admin/responses/:submissionId`
+
 ## URL query prefill (optional)
 
 You can prefill a few Step 1 fields by opening the survey with query parameters:
