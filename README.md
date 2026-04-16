@@ -32,9 +32,13 @@ A static, single-page survey for **ARTA-style Client Satisfaction** (government 
 | `pwd-logo.jpg`  | Logo in header and loader. |
 | `backend/`      | **Node/Express API + MongoDB** for saving responses (optional). |
 
+## Full documentation
+
+See `docs/PROJECT_DOCUMENTATION.md`.
+
 ## Survey flow (5 steps)
 
-1. **Client information** – Type (Citizen/Business/Government), date, sex, age, region, service availed.
+1. **Client information** – Type (Citizen/Business/Government), date, sex, age, region, **type of internal service availed** (e.g. processing of purchase request / PR reference), optional **RIS number** (often prefilled from a link after an internal transaction).
 2. **Citizen’s Charter (CC)** – CC1 (awareness), CC2 (visibility), CC3 (helpfulness); CC2/CC3 can be N/A.
 3. **Service Quality (SQD)** – SQD0–SQD8 with Likert scale (Strongly Disagree … Strongly Agree, N/A).
 4. **Suggestions** – Free text and optional email.
@@ -72,6 +76,17 @@ This repo includes a small API server that can store submissions in MongoDB.
 
 Responses are stored in MongoDB collection `responses` (one document per submission, keyed by `submissionId` inside the document).
 
+### Local full stack (survey + API)
+
+To exercise **POST /api/responses** against a server on your machine:
+
+1. Create `backend/.env` from [`backend/.env.example`](backend/.env.example) and set `MONGODB_URI` (local or Atlas).
+2. Start the API: `cd backend && npm run dev` (listens on **5175** by default).
+3. Serve the static site on a CORS-allowed origin, e.g. `npx serve . -l 8080` from the repo root (matches default `CORS_ORIGINS`).
+4. Point the browser at the API: in [`index.html`](index.html), set `window.__PWD_BACKEND_BASE_URL` to `http://127.0.0.1:5175` **before** the `app.js` script tag (replace the production URL while testing, or use a local copy of the page).
+
+If the API rejects requests with a CORS error, add your frontend origin (scheme + host + port) to `CORS_ORIGINS` in `backend/.env`.
+
 ### MongoDB Atlas quick setup (cloud)
 
 1. Create a cluster in MongoDB Atlas.
@@ -108,15 +123,32 @@ You can prefill a few Step 1 fields by opening the survey with query parameters:
 - `sex` (`male` or `female`)
 - `age` (any string/number; kept as entered)
 - `region`
-- `service` (maps to “Service availed”)
+- `service` (maps to **Type of internal service availed**)
+- `ris` or `risNumber` (maps to **RIS number**; use one or the other)
 
 Example:
 
-- `index.html?date=2026-03-11&sex=male&age=25&region=Region%2012&service=New%20connection`
+- `index.html?date=2026-03-11&sex=male&age=25&region=Region%2012&service=New%20connection&ris=RIS-2026-001`
+
+Upstream systems should pass **`ris=`** (or `risNumber=`) for the identifier and keep **`service=`** for the human-readable service description.
 
 ## GitHub Pages
 
 Enable Pages for the repo (e.g. deploy from branch `main`, root `/`).
+
+The survey origin will look like `https://<user>.github.io/<repo>/`. Add that exact origin (no trailing path) to **`CORS_ORIGINS`** in the API server’s `.env` so browsers can submit responses.
+
+## Company server deployment (checklist)
+
+Coordinate with IT (e.g. hosting contact) before moving off Render or another host:
+
+- **HTTPS URL** for the static survey and/or reverse proxy in front of the API.
+- **Where the Node API runs** (same machine as static files vs separate) and how it is kept running (e.g. systemd, PM2).
+- **MongoDB**: connection string in `backend/.env` (`MONGODB_URI`); Atlas vs on-prem.
+- **`CORS_ORIGINS`**: every browser origin that will load the survey (company portal, GitHub Pages, etc.).
+- **Firewall / reverse proxy**: only expose what is needed; `POST /api/responses` must be reachable from users’ browsers.
+- **`ADMIN_API_KEY`**: set for reporting endpoints; store securely and rotate when changing hosts.
+- **Frontend config**: in the deployed `index.html`, set `window.__PWD_BACKEND_BASE_URL` to the production API base URL (no trailing slash required for paths like `/api/responses`).
 
 ## Customization
 

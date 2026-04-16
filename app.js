@@ -7,7 +7,7 @@
  *
  * NAVIGATION (Ctrl+F / Cmd+F to jump):
  *   Constants          – timing, storage keys, admin year range
- *   Survey question data – STEP_LABELS, CLIENT_TYPES, CC options, LIKERT, SQD_QUESTIONS, DEFAULT_CONFIG
+ *   Survey question data – STEP_LABELS, CLIENT_TYPES, CC options, LIKERT, SQD_QUESTIONS, DEFAULT_CONFIG (step0 includes risNumber)
  *   Config & storage   – getLocalSurveyConfig, setLocalSurveyConfig
  *   Routing & IDs      – getRoute, createSubmissionId, hashString
  *   Default form state – DEFAULT_STATE
@@ -138,7 +138,8 @@ const DEFAULT_QUESTIONS = {
     sex: "Sex",
     age: "Age",
     region: "Region of residence",
-    serviceAvailed: "Service availed",
+    serviceAvailed: "Type of internal service availed",
+    risNumber: "RIS number",
   },
   step1: {
     cc1Label: "CC1: Awareness of the Citizen's Charter (CC)",
@@ -235,7 +236,7 @@ const getRoute = () => {
   return hash.startsWith("#/admin") ? "admin" : "survey";
 };
 
-// Parse URL query params (?date=...&sex=...&age=...&region=...&service=...) into partial form state
+// Parse URL query params (?date=...&sex=...&age=...&region=...&service=...&ris=...&risNumber=...) into partial form state
 function getInitialStateFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const partial = {};
@@ -252,6 +253,8 @@ function getInitialStateFromUrl() {
   if (region != null && String(region).trim()) partial.region = String(region).trim();
   const service = params.get("service");
   if (service != null && String(service).trim()) partial.serviceAvailed = String(service).trim();
+  const risRaw = params.get("ris") ?? params.get("risNumber");
+  if (risRaw != null && String(risRaw).trim()) partial.risNumber = String(risRaw).trim();
   return partial;
 }
 
@@ -263,6 +266,7 @@ const DEFAULT_STATE = {
   age: "",
   region: "",
   serviceAvailed: "",
+  risNumber: "",
   cc1: "",
   cc2: "",
   cc3: "",
@@ -834,9 +838,9 @@ function App() {
 
               <h4 className="admin-subsection-title">Step 1 – Client information</h4>
               <div className="admin-questions-grid">
-                {["clientType", "date", "sex", "age", "region", "serviceAvailed"].map((key) => (
+                {["clientType", "date", "sex", "age", "region", "serviceAvailed", "risNumber"].map((key) => (
                   <div key={key} className="field admin-field-question">
-                    <label htmlFor={`q-step0-${key}`}>{key === "clientType" ? "Client type" : key === "date" ? "Date" : key === "serviceAvailed" ? "Service availed" : key}</label>
+                    <label htmlFor={`q-step0-${key}`}>{key === "clientType" ? "Client type" : key === "date" ? "Date" : key === "serviceAvailed" ? "Type of internal service availed" : key === "risNumber" ? "RIS number" : key}</label>
                     <input
                       id={`q-step0-${key}`}
                       type="text"
@@ -1234,17 +1238,36 @@ function App() {
                 const showServiceAvailedError = showRequiredError && serviceAvailedEmpty;
                 const serviceReadOnly = step0Locked;
                 return (
-              <QuestionRow label={effectiveQuestions.step0.serviceAvailed} help="Required." htmlFor="serviceAvailed" required showError={showServiceAvailedError}>
+              <QuestionRow label={effectiveQuestions.step0.serviceAvailed} help={'Required. Use the same wording as on internal forms (e.g. Processing of Purchase Request No. PR-2603-20).'} htmlFor="serviceAvailed" required showError={showServiceAvailedError}>
                 <div className={`field${showServiceAvailedError ? " field--required" : ""}${serviceReadOnly ? " field--readonly" : ""}`}>
                   <input
                     id="serviceAvailed"
                     type="text"
-                    placeholder="Service availed"
+                    placeholder="e.g. Processing of Purchase Request No. PR-2603-20"
                     value={formState.serviceAvailed}
                     onChange={(e) => updateField("serviceAvailed", e.target.value)}
                     required
                     readOnly={serviceReadOnly}
                     aria-readonly={serviceReadOnly}
+                  />
+                </div>
+              </QuestionRow>
+                );
+              })()}
+
+              {(() => {
+                const risReadOnly = step0Locked;
+                return (
+              <QuestionRow label={effectiveQuestions.step0.risNumber} help="Optional. Prefilled when opened from a link." htmlFor="risNumber">
+                <div className={`field${risReadOnly ? " field--readonly" : ""}`}>
+                  <input
+                    id="risNumber"
+                    type="text"
+                    placeholder="RIS number (if applicable)"
+                    value={formState.risNumber}
+                    onChange={(e) => updateField("risNumber", e.target.value)}
+                    readOnly={risReadOnly}
+                    aria-readonly={risReadOnly}
                   />
                 </div>
               </QuestionRow>
@@ -1463,7 +1486,8 @@ function App() {
                     <div className="summary-item"><span>Sex</span><strong>{SEX_OPTIONS.find((x) => x.id === formState.sex)?.label || "—"}</strong></div>
                     <div className="summary-item"><span>Age</span><strong>{formState.age || "—"}</strong></div>
                     <div className="summary-item"><span>Region</span><strong>{formState.region || "—"}</strong></div>
-                    <div className="summary-item"><span>Service availed</span><strong>{formState.serviceAvailed || "—"}</strong></div>
+                    <div className="summary-item"><span>{effectiveQuestions.step0.serviceAvailed}</span><strong>{formState.serviceAvailed || "—"}</strong></div>
+                    <div className="summary-item"><span>{effectiveQuestions.step0.risNumber}</span><strong>{formState.risNumber || "—"}</strong></div>
                   </div>
 
                   <div className="summary-section">
