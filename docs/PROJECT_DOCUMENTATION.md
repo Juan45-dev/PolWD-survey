@@ -21,7 +21,7 @@ This document describes the full system: frontend (survey + admin), backend API,
   - [Auth model (admin pull)](#auth-model-admin-pull)
   - [CORS](#cors)
   - [Security notes](#security-notes)
-- [Database (MongoDB Atlas)](#database-mongodb-atlas)
+- [Database (MongoDB)](#database-mongodb)
   - [Collections](#collections)
   - [Indexes](#indexes)
   - [ERD](#erd)
@@ -31,8 +31,8 @@ This document describes the full system: frontend (survey + admin), backend API,
   - [Submission sequence](#submission-sequence)
   - [Admin pull sequence](#admin-pull-sequence)
 - [Deployment](#deployment)
-  - [Backend on Render](#backend-on-render)
-  - [Frontend on GitHub Pages](#frontend-on-github-pages)
+  - [Backend (Node on your host)](#backend-node-on-your-host)
+  - [Frontend (static files)](#frontend-static-files)
 - [Operations](#operations)
   - [How the boss “pulls directly”](#how-the-boss-pulls-directly)
   - [Key rotation](#key-rotation)
@@ -50,7 +50,7 @@ The system is split into three parts:
 
 - **Frontend**: a static single-page app (React UMD + Babel in-browser) that runs in the user’s browser.
 - **Backend**: a Node/Express API that accepts submissions and provides secured admin endpoints for exports.
-- **Database**: MongoDB Atlas storing documents in `pwd_survey.responses`.
+- **Database**: MongoDB storing documents in `pwd_survey.responses` (cloud or self-hosted).
 
 ## Repository structure
 
@@ -272,7 +272,7 @@ PowerShell example:
 
 ```powershell
 $body = @{ submissionId = "sub_test_1"; clientType = "government"; date = "2026-03-11"; sex="male"; age="30"; region="Davao"; serviceAvailed="Health"; risNumber="RIS-2026-001"; cc1="4"; cc2="5"; cc3="4"; sqd=@{sqd0="6";sqd1="6";sqd2="6";sqd3="6";sqd4="6";sqd5="6";sqd6="6";sqd7="6";sqd8="6"}; suggestions=""; email=""; activeYear=2026; configVersion=1; submittedAt=(Get-Date).ToString("o") } | ConvertTo-Json -Depth 10
-Invoke-RestMethod "https://polwd-survey.onrender.com/api/responses" -Method Post -ContentType "application/json" -Body $body
+Invoke-RestMethod "https://YOUR-API-ORIGIN/api/responses" -Method Post -ContentType "application/json" -Body $body
 ```
 
 #### `GET /api/admin/responses`
@@ -302,7 +302,7 @@ Success (200):
 PowerShell example:
 
 ```powershell
-Invoke-RestMethod "https://polwd-survey.onrender.com/api/admin/responses?limit=100&skip=0" -Headers @{ "x-api-key" = "<ADMIN_API_KEY>" }
+Invoke-RestMethod "https://YOUR-API-ORIGIN/api/admin/responses?limit=100&skip=0" -Headers @{ "x-api-key" = "<ADMIN_API_KEY>" }
 ```
 
 #### `GET /api/admin/responses/:submissionId`
@@ -310,7 +310,7 @@ Invoke-RestMethod "https://polwd-survey.onrender.com/api/admin/responses?limit=1
 PowerShell example:
 
 ```powershell
-Invoke-RestMethod "https://polwd-survey.onrender.com/api/admin/responses/sub_d3839f02-..." -Headers @{ "x-api-key" = "<ADMIN_API_KEY>" }
+Invoke-RestMethod "https://YOUR-API-ORIGIN/api/admin/responses/<SUBMISSION_ID>" -Headers @{ "x-api-key" = "<ADMIN_API_KEY>" }
 ```
 
 ### Auth model (admin pull)
@@ -334,11 +334,11 @@ Only origins listed in `CORS_ORIGINS` are allowed (browser requests). Non-browse
   - Prefer sharing it via a secure channel.
   - Rotate it if leaked.
 - **Transport security**:
-  - Use HTTPS for remote access (Render provides HTTPS).
+  - Use HTTPS for remote access when the API is exposed beyond localhost.
 - **CORS is not auth**:
   - CORS only controls browsers; admin endpoints still require the API key.
 
-## Database (MongoDB Atlas)
+## Database (MongoDB)
 
 ### Collections
 
@@ -391,8 +391,8 @@ Recommendations:
 - Treat responses as **sensitive** (contains personal data + opinions).
 - Consider whether you should store `email` at all. If not needed, remove it before insert.
 - Limit who has access to:
-  - MongoDB Atlas project
-  - Render environment variables
+  - MongoDB deployment
+  - API host environment variables
   - `ADMIN_API_KEY`
 
 Retention:
@@ -405,9 +405,9 @@ Retention:
 
 ```mermaid
 flowchart LR
-  U[User Browser] --> FE[Frontend\nGitHub Pages / localhost]
-  FE -->|POST /api/responses| API[Render API\npolwd-survey.onrender.com]
-  API -->|insertOne| DB[(MongoDB Atlas\npwd_survey.responses)]
+  U[User Browser] --> FE[Frontend\nstatic host / localhost]
+  FE -->|POST /api/responses| API[Survey API\nYOUR-API-ORIGIN]
+  API -->|insertOne| DB[(MongoDB\npwd_survey.responses)]
   Boss[Boss / Reporting] -->|GET /api/admin/responses\nx-api-key| API
   API -->|find()| DB
 ```
@@ -417,8 +417,8 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   participant FE as Browser (Frontend)
-  participant API as Render API (Express)
-  participant DB as MongoDB Atlas
+  participant API as Express API
+  participant DB as MongoDB
 
   FE->>API: POST /api/responses (JSON payload)
   API->>DB: insertOne(payload + receivedAt)
@@ -431,8 +431,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant Boss as Boss (PowerShell/Tool)
-  participant API as Render API (Express)
-  participant DB as MongoDB Atlas
+  participant API as Express API
+  participant DB as MongoDB
 
   Boss->>API: GET /api/admin/responses (x-api-key)
   API->>DB: find() + sort + limit/skip
@@ -442,35 +442,33 @@ sequenceDiagram
 
 ## Deployment
 
-### Backend on Render
+### Backend (Node on your host)
 
-Render Web Service configuration:
+Example layout:
 
-- **Root Directory**: `backend`
-- **Build Command**: `npm install`
-- **Start Command**: `npm start`
+- **Application root**: `backend/` (contains `package.json` and `server.js`)
+- **Install**: `npm install`
+- **Start**: `npm start` (or `node server.js`)
 - **Environment variables**: set `MONGODB_URI`, `MONGODB_DB`, `ADMIN_API_KEY`, `CORS_ORIGINS`
 
-MongoDB Atlas requirement:
+MongoDB must be reachable from that host (local install, LAN server, or Atlas). Restrict network access to what your security policy allows.
 
-- Add IP Access List entry `0.0.0.0/0` (simple) or a more restrictive policy.
+### Frontend (static files)
 
-### Frontend on GitHub Pages
+The UI is static HTML/JS/CSS. For production, set the API origin in `index.html` before `app.js` loads, for example:
 
-Frontend is static. For production, set backend base URL in `index.html` before `app.js`:
-
-- `window.__PWD_BACKEND_BASE_URL = "https://polwd-survey.onrender.com";`
+- `window.__PWD_BACKEND_BASE_URL = "https://YOUR-API-ORIGIN";`
 
 ## Operations
 
 ### How the boss “pulls directly”
 
-Boss can pull from anywhere using the Render URL and the API key.
+Boss can pull from anywhere that can reach the API, using the API base URL and the API key.
 
 PowerShell example:
 
 ```powershell
-Invoke-RestMethod "https://polwd-survey.onrender.com/api/admin/responses?limit=100&skip=0" `
+Invoke-RestMethod "https://YOUR-API-ORIGIN/api/admin/responses?limit=100&skip=0" `
   -Headers @{ "x-api-key" = "<ADMIN_API_KEY>" }
 ```
 
@@ -479,8 +477,8 @@ Invoke-RestMethod "https://polwd-survey.onrender.com/api/admin/responses?limit=1
 If the key is leaked:
 
 1. Generate a new one
-2. Update Render env var `ADMIN_API_KEY`
-3. Redeploy/restart Render service (Render auto-restarts when env changes)
+2. Update `ADMIN_API_KEY` in the server environment (e.g. `.env` or your host’s secret store)
+3. Restart the API process so it picks up the new value
 4. Distribute the new key securely
 
 ### Monitoring
@@ -488,12 +486,10 @@ If the key is leaked:
 Minimum recommended checks:
 
 - `GET /api/health` should return `ok: true`
-- Render deploy status should be healthy
-- MongoDB Atlas cluster should show normal status
+- Your process manager or host should show the API running
+- MongoDB should accept connections from the API host
 
-Free-tier Render note:
-
-- Render free services can **spin down** with inactivity, which can cause a cold start delay (often up to ~50 seconds) on the first request.
+If you use a free-tier PaaS, note that some providers **spin down** idle services, which can add a cold-start delay on the first request.
 
 ### Backups and exports
 
@@ -505,7 +501,7 @@ Example (PowerShell) – save to a JSON file:
 
 ```powershell
 $key = Read-Host "ADMIN_API_KEY"
-$data = Invoke-RestMethod "https://polwd-survey.onrender.com/api/admin/responses?limit=1000&skip=0" -Headers @{ "x-api-key" = $key }
+$data = Invoke-RestMethod "https://YOUR-API-ORIGIN/api/admin/responses?limit=1000&skip=0" -Headers @{ "x-api-key" = $key }
 $data.items | ConvertTo-Json -Depth 20 | Out-File -Encoding utf8 "responses-export.json"
 ```
 
@@ -514,7 +510,7 @@ For large datasets, paginate (`skip`) and combine outputs.
 ### Troubleshooting
 
 - **CORS blocked**: ensure `CORS_ORIGINS` includes your frontend origin exactly (scheme + host + port).
-- **Mongo connect errors**: verify `MONGODB_URI` and that Atlas Network Access allows connections (`0.0.0.0/0` for simple setups).
+- **Mongo connect errors**: verify `MONGODB_URI`, credentials, and network access from the API host to MongoDB (firewall / Atlas IP allowlist / VPN as applicable).
 - **Admin endpoint says Missing x-api-key**: header must be named exactly `x-api-key`.
 - **Admin endpoint says Invalid API key**: confirm `ADMIN_API_KEY` matches and service restarted.
 
@@ -522,11 +518,11 @@ For large datasets, paginate (`skip`) and combine outputs.
 
 | Symptom | Likely cause | Fix |
 |--------|--------------|-----|
-| Survey submits but nothing appears in Atlas | Frontend posting to wrong backend | Ensure `index.html` sets `window.__PWD_BACKEND_BASE_URL` to Render URL. |
-| Browser console shows CORS error | `CORS_ORIGINS` missing your frontend origin | Add your exact origin (scheme+host+port) to Render env `CORS_ORIGINS`. |
-| `/api/health` returns Mongo error | Atlas IP Access List / wrong URI | Add `0.0.0.0/0` (simple) and recheck `MONGODB_URI`. |
+| Survey submits but nothing appears in MongoDB | Frontend posting to wrong backend | Ensure `index.html` sets `window.__PWD_BACKEND_BASE_URL` to your deployed API origin. |
+| Browser console shows CORS error | `CORS_ORIGINS` missing your frontend origin | Add your exact origin (scheme+host+port) to the API server’s `CORS_ORIGINS`. |
+| `/api/health` returns Mongo error | Network / auth / wrong URI | Verify `MONGODB_URI` and that the API host is allowed to connect to MongoDB. |
 | Admin endpoint says Missing x-api-key | Header name wrong | Use header **exactly** `x-api-key`. |
-| Admin endpoint says Invalid API key | Key mismatch | Rotate `ADMIN_API_KEY` in Render and share the new value. |
+| Admin endpoint says Invalid API key | Key mismatch | Rotate `ADMIN_API_KEY` on the server and share the new value. |
 
 ## Developer guide
 
@@ -535,16 +531,14 @@ For large datasets, paginate (`skip`) and combine outputs.
 Backend:
 
 ```powershell
-cd d:\1OJT\PWD\backend
+cd backend
 npm install
-cd ..
-node backend/server.js
+npm start
 ```
 
-Frontend (simple static server on port 8080):
+Frontend (simple static server on port 8080), from the repository root:
 
 ```powershell
-cd d:\1OJT\PWD
 npx serve . -l 8080
 ```
 
@@ -552,9 +546,9 @@ Then open `http://localhost:8080/`.
 
 ### Release checklist
 
-- Update Render backend if `backend/` changes are pushed
-- Verify `https://polwd-survey.onrender.com/api/health`
-- Verify the frontend is pointing at Render (`window.__PWD_BACKEND_BASE_URL`)
-- Submit one survey and confirm it appears in Atlas
-- Verify admin pull endpoint works with the current `ADMIN_API_KEY`
+- Deploy or restart the backend if `backend/` changed
+- Verify `GET https://YOUR-API-ORIGIN/api/health` (replace with your real API origin)
+- Verify the frontend sets `window.__PWD_BACKEND_BASE_URL` to that same API origin when using the backend
+- Submit one survey and confirm it appears in MongoDB
+- Verify admin pull endpoints work with the current `ADMIN_API_KEY`
 

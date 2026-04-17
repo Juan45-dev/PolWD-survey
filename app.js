@@ -32,7 +32,8 @@ const ADMIN_YEAR_START = 2015;
 const ADMIN_YEAR_COUNT = 26;
 
 // ========== Backend (MongoDB via API) ==========
-const USE_BACKEND = true;
+// Set true after your team deploys the API and configures index.html / CORS.
+const USE_BACKEND = false;
 const BACKEND_BASE_URL = (() => {
   if (typeof window === "undefined") return "";
   if (window.__PWD_BACKEND_BASE_URL) return window.__PWD_BACKEND_BASE_URL;

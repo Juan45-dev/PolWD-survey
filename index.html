@@ -28,10 +28,11 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
     <script>
-      // Backend API base URL (Render)
-      window.__PWD_BACKEND_BASE_URL = "https://polwd-survey.onrender.com";
+      // Optional: set your API origin before app.js loads (scheme + host + port, no trailing slash).
+      // If unset, the app uses http://127.0.0.1:5175 (see app.js).
+      // window.__PWD_BACKEND_BASE_URL = "https://api.example.gov";
     </script>
-    <script type="text/babel" src="./app.js?v=20260407-2"></script>
+    <script type="text/babel" src="./app.js"></script>
     <script>
       window.addEventListener("load", () => {
         const loader = document.getElementById("loading-screen");
